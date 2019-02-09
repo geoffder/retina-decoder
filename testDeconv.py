@@ -9,7 +9,7 @@ wave = df.values.flatten()
 # p = order of autoregression, options are 1 and 2. Indicates how many
 # preceding data-points are used at each (time)step of auto-regression
 # method_deconvolution: 'oasis' or 'cvxpy'
-# to use oasis, compile cnmf.oasis
+# to use oasis, compile cnmf.oasis (see readme)
 c, _, _, _, _, sp, _ = deconv.constrained_foopsi(
                         wave, p=1, method_deconvolution='oasis')
 
