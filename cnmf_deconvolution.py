@@ -2,12 +2,12 @@ import numpy as np
 import scipy
 from scipy import signal
 from past.utils import old_div
-from cnmf_oasis import oasisAR1, constrained_oasisAR1
+import sys
 
 
 def constrained_foopsi(
         fluor, bl=None,  c1=None, g=None,  sn=None, p=1,
-        bas_nonneg=True, noise_range=[.25, .5],
+        method_deconvolution='oasis', bas_nonneg=True, noise_range=[.25, .5],
         noise_method='logmexp', lags=5, fudge_factor=1., verbosity=False,
         solvers=None, optimize_g=0, s_min=None, **kwargs):
     """
@@ -86,45 +86,59 @@ def constrained_foopsi(
             method=noise_method, lags=lags, fudge_factor=fudge_factor)
     lam = None
 
-    penalty = 1 if s_min is None else 0
-    if p == 1:
-        if bl is None:
-            # Infer the most likely discretized spike train underlying
-            # an AR(1) fluorescence trace. Solves the noise constrained sparse
-            # non-negative deconvolution problem min |s|_1 subject to:
-            # |c-y|^2 = sn^2 T and s_t = c_t-g c_{t-1} >= 0
-            c, sp, bl, g, lam = constrained_oasisAR1(
-                fluor.astype(np.float32), g[0], sn, optimize_b=True,
-                b_nonneg=bas_nonneg, optimize_g=optimize_g, penalty=penalty,
-                s_min=0 if s_min is None else s_min)
-        else:
-            c, sp, _, g, lam = constrained_oasisAR1(
-                (fluor - bl).astype(np.float32), g[0], sn, optimize_b=False,
-                penalty=penalty)
+    if method_deconvolution == 'cvx':
+        c, bl, c1, g, sn, sp = cvxopt_foopsi(
+            fluor, b=bl, c1=c1, g=g, sn=sn, p=p, bas_nonneg=bas_nonneg,
+            verbosity=verbosity)
 
-        c1 = c[0]
+    elif method_deconvolution == 'cvxpy':
+        c, bl, c1, g, sn, sp = cvxpy_foopsi(
+            fluor, g, sn, b=bl, c1=c1, bas_nonneg=bas_nonneg, solvers=solvers)
 
-        # remove intial calcium to align with the other foopsi methods
-        # it is added back in function constrained_foopsi_parallel of
-        # temporal.py
-        c -= c1 * g**np.arange(len(fluor))
-    elif p == 2:
-        if bl is None:
-            c, sp, bl, g, lam = constrained_oasisAR2(
-                fluor.astype(np.float32), g, sn, optimize_b=True,
-                b_nonneg=bas_nonneg, optimize_g=optimize_g,
-                penalty=penalty)
+    elif method_deconvolution == 'oasis':
+        from cnmf_oasis import constrained_oasisAR1
+        penalty = 1 if s_min is None else 0
+        if p == 1:
+            if bl is None:
+                # Infer the most likely discretized spike train underlying
+                # an AR(1) fluorescence trace.
+                # Solves the noise constrained sparse
+                # non-negative deconvolution problem. min |s|_1 subject to:
+                # |c-y|^2 = sn^2 T and s_t = c_t-g c_{t-1} >= 0
+                c, sp, bl, g, lam = constrained_oasisAR1(
+                    fluor.astype(np.float32), g[0], sn, optimize_b=True,
+                    b_nonneg=bas_nonneg, optimize_g=optimize_g,
+                    penalty=penalty,
+                    s_min=0 if s_min is None else s_min)
+            else:
+                c, sp, _, g, lam = constrained_oasisAR1(
+                    (fluor - bl).astype(np.float32), g[0], sn,
+                    optimize_b=False, penalty=penalty)
+
+            c1 = c[0]
+
+            # remove intial calcium to align with the other foopsi methods
+            # it is added back in function constrained_foopsi_parallel of
+            # temporal.py
+            c -= c1 * g**np.arange(len(fluor))
+        elif p == 2:
+            from cnmf_oasis import constrained_oasisAR1, constrained_oasisAR2
+            if bl is None:
+                c, sp, bl, g, lam = constrained_oasisAR2(
+                    fluor.astype(np.float32), g, sn, optimize_b=True,
+                    b_nonneg=bas_nonneg, optimize_g=optimize_g,
+                    penalty=penalty)
+            else:
+                c, sp, _, g, lam = constrained_oasisAR2(
+                    (fluor - bl).astype(np.float32), g, sn, optimize_b=False,
+                    penalty=penalty)
+            c1 = c[0]
+            d = (g[0] + np.sqrt(g[0] * g[0] + 4 * g[1])) / 2
+            c -= c1 * d**np.arange(len(fluor))
         else:
-            c, sp, _, g, lam = constrained_oasisAR2(
-                (fluor - bl).astype(np.float32), g, sn, optimize_b=False,
-                penalty=penalty)
-        c1 = c[0]
-        d = (g[0] + np.sqrt(g[0] * g[0] + 4 * g[1])) / 2
-        c -= c1 * d**np.arange(len(fluor))
-    else:
-        raise Exception(
-            'OASIS is currently only implemented for p=1 and p=2')
-    g = np.ravel(g)
+            raise Exception(
+                'OASIS is currently only implemented for p=1 and p=2')
+        g = np.ravel(g)
 
     return c, bl, c1, g, sn, sp, lam
 
@@ -171,7 +185,8 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
     i = 0
     if max_iter is None:
         max_iter = len(KK)
-    for i in range(max_iter):  # max(l) is checked at the end, should do at least one iteration
+    # max(l) is checked at the end, should do at least one iteration
+    for i in range(max_iter):
         w = np.argmax(l)
         P[w] = True
 
@@ -592,6 +607,390 @@ def constrained_oasisAR2(
             s = np.append([0, 0], c[2:] - g[0] * c[1:-1] - g[1] * c[:-2])
 
     return c, s, b, g, lam
+
+
+def constrained_foopsi_cvxpy(fluor, bl=None,  c1=None, g=None,  sn=None, p=None, method_deconvolution='cvxpy', bas_nonneg=True,
+                       noise_range=[.25, .5], noise_method='logmexp', lags=5, fudge_factor=1.,
+                       verbosity=False, solvers=None, optimize_g=0, s_min=None, **kwargs):
+    """ Infer the most likely discretized spike train underlying a fluorescence trace
+    It relies on a noise constrained deconvolution approach
+    Args:
+        fluor: np.ndarray
+            One dimensional array containing the fluorescence intensities with
+            one entry per time-bin.
+        bl: [optional] float
+            Fluorescence baseline value. If no value is given, then bl is estimated
+            from the data.
+        c1: [optional] float
+            value of calcium at time 0
+        g: [optional] list,float
+            Parameters of the AR process that models the fluorescence impulse response.
+            Estimated from the data if no value is given
+        sn: float, optional
+            Standard deviation of the noise distribution.  If no value is given,
+            then sn is estimated from the data.
+        p: int
+            order of the autoregression model
+        method_deconvolution: [optional] string
+            solution method for basis projection pursuit 'cvx' or 'cvxpy' or 'oasis'
+        bas_nonneg: bool
+            baseline strictly non-negative
+        noise_range:  list of two elms
+            frequency range for averaging noise PSD
+        noise_method: string
+            method of averaging noise PSD
+        lags: int
+            number of lags for estimating time constants
+        fudge_factor: float
+            fudge factor for reducing time constant bias
+        verbosity: bool
+             display optimization details
+        solvers: list string
+            primary and secondary (if problem unfeasible for approx solution) solvers
+            to be used with cvxpy, default is ['ECOS','SCS']
+        optimize_g : [optional] int, only applies to method 'oasis'
+            Number of large, isolated events to consider for optimizing g.
+            If optimize_g=0 (default) the provided or estimated g is not further optimized.
+        s_min : float, optional, only applies to method 'oasis'
+            Minimal non-zero activity within each bin (minimal 'spike size').
+            For negative values the threshold is abs(s_min) * sn * sqrt(1-g)
+            If None (default) the standard L1 penalty is used
+            If 0 the threshold is determined automatically such that RSS <= sn^2 T
+    Returns:
+        c: np.ndarray float
+            The inferred denoised fluorescence signal at each time-bin.
+        bl, c1, g, sn : As explained above
+        sp: ndarray of float
+            Discretized deconvolved neural activity (spikes)
+        lam: float
+            Regularization parameter
+    Raises:
+        Exception("You must specify the value of p")
+        Exception('OASIS is currently only implemented for p=1 and p=2')
+        Exception('Undefined Deconvolution Method')
+    References:
+        * Pnevmatikakis et al. 2016. Neuron, in press, http://dx.doi.org/10.1016/j.neuron.2015.11.037
+        * Machado et al. 2015. Cell 162(2):338-350
+    \image: docs/img/deconvolution.png
+    \image: docs/img/evaluationcomponent.png
+    """
+
+    if p is None:
+        raise Exception("You must specify the value of p")
+
+    if g is None or sn is None:
+        # Estimate noise standard deviation and AR coefficients if they are not present
+        g, sn = estimate_parameters(fluor, p=p, sn=sn, g=g, range_ff=noise_range,
+                                    method=noise_method, lags=lags, fudge_factor=fudge_factor)
+    lam = None
+    if p == 0:
+        c1 = 0
+        g = np.array(0)
+        bl = 0
+        c = np.maximum(fluor, 0)
+        sp = c.copy()
+
+    else:  # choose a source extraction method
+        if method_deconvolution == 'cvx':
+            c, bl, c1, g, sn, sp = cvxopt_foopsi(
+                fluor, b=bl, c1=c1, g=g, sn=sn, p=p, bas_nonneg=bas_nonneg, verbosity=verbosity)
+
+        elif method_deconvolution == 'cvxpy':
+            c, bl, c1, g, sn, sp = cvxpy_foopsi(
+                fluor, g, sn, b=bl, c1=c1, bas_nonneg=bas_nonneg, solvers=solvers)
+
+        elif method_deconvolution == 'oasis':
+            from caiman.source_extraction.cnmf.oasis import constrained_oasisAR1
+            penalty = 1 if s_min is None else 0
+            if p == 1:
+                if bl is None:
+                    # Infer the most likely discretized spike train underlying an AR(1) fluorescence trace
+                    # Solves the noise constrained sparse non-negative deconvolution problem
+                    # min |s|_1 subject to |c-y|^2 = sn^2 T and s_t = c_t-g c_{t-1} >= 0
+                    c, sp, bl, g, lam = constrained_oasisAR1(
+                        fluor.astype(np.float32), g[0], sn, optimize_b=True, b_nonneg=bas_nonneg,
+                        optimize_g=optimize_g, penalty=penalty, s_min=0 if s_min is None else s_min)
+                else:
+                    c, sp, _, g, lam = constrained_oasisAR1(
+                        (fluor - bl).astype(np.float32), g[0], sn, optimize_b=False, penalty=penalty)
+
+                c1 = c[0]
+
+                # remove intial calcium to align with the other foopsi methods
+                # it is added back in function constrained_foopsi_parallel of temporal.py
+                c -= c1 * g**np.arange(len(fluor))
+            elif p == 2:
+                if bl is None:
+                    c, sp, bl, g, lam = constrained_oasisAR2(
+                        fluor.astype(np.float32), g, sn, optimize_b=True, b_nonneg=bas_nonneg,
+                        optimize_g=optimize_g, penalty=penalty)
+                else:
+                    c, sp, _, g, lam = constrained_oasisAR2(
+                        (fluor - bl).astype(np.float32), g, sn, optimize_b=False, penalty=penalty)
+                c1 = c[0]
+                d = (g[0] + np.sqrt(g[0] * g[0] + 4 * g[1])) / 2
+                c -= c1 * d**np.arange(len(fluor))
+            else:
+                raise Exception(
+                    'OASIS is currently only implemented for p=1 and p=2')
+            g = np.ravel(g)
+
+        else:
+            raise Exception('Undefined Deconvolution Method')
+
+    return c, bl, c1, g, sn, sp, lam
+
+
+def cvxopt_foopsi(fluor, b, c1, g, sn, p, bas_nonneg, verbosity):
+    """Solve the deconvolution problem using cvxopt and picos packages
+    """
+    try:
+        from cvxopt import matrix, spmatrix, spdiag, solvers
+        import picos
+    except ImportError:
+        raise ImportError(
+            'Constrained Foopsi requires cvxopt and picos packages.')
+
+    T = len(fluor)
+
+    # construct deconvolution matrix  (sp = G*c)
+    G = spmatrix(1., list(range(T)), list(range(T)), (T, T))
+
+    for i in range(p):
+        G = G + spmatrix(-g[i], np.arange(i + 1, T),
+                         np.arange(T - i - 1), (T, T))
+
+    gr = np.roots(np.concatenate([np.array([1]), -g.flatten()]))
+    gd_vec = np.max(gr)**np.arange(T)  # decay vector for initial fluorescence
+    gen_vec = G * matrix(np.ones(fluor.size))
+
+    # Initialize variables in our problem
+    prob = picos.Problem()
+
+    # Define variables
+    calcium_fit = prob.add_variable('calcium_fit', fluor.size)
+    cnt = 0
+    if b is None:
+        flag_b = True
+        cnt += 1
+        b = prob.add_variable('b', 1)
+        if bas_nonneg:
+            b_lb = 0
+        else:
+            b_lb = np.min(fluor)
+
+        prob.add_constraint(b >= b_lb)
+    else:
+        flag_b = False
+
+    if c1 is None:
+        flag_c1 = True
+        cnt += 1
+        c1 = prob.add_variable('c1', 1)
+        prob.add_constraint(c1 >= 0)
+    else:
+        flag_c1 = False
+
+    # Add constraints
+    prob.add_constraint(G * calcium_fit >= 0)
+    res = abs(matrix(fluor.astype(float)) - calcium_fit - b *
+              matrix(np.ones(fluor.size)) - matrix(gd_vec) * c1)
+    prob.add_constraint(res < sn * np.sqrt(fluor.size))
+    prob.set_objective('min', calcium_fit.T * gen_vec)
+
+    # solve problem
+    try:
+        prob.solve(solver='mosek', verbose=verbosity)
+
+    except ImportError:
+        warn('MOSEK is not installed. Spike inference may be VERY slow!')
+        prob.solver_selection()
+        prob.solve(verbose=verbosity)
+
+    # if problem in infeasible due to low noise value then project onto the
+    # cone of linear constraints with cvxopt
+    if (prob.status == 'prim_infeas_cer' or prob.status == 'dual_infeas_cer'
+            or prob.status == 'primal infeasible'):
+        warn('''Original problem infeasible.
+             Adjusting noise level and re-solving''')
+        # setup quadratic problem with cvxopt
+        solvers.options['show_progress'] = verbosity
+        ind_rows = list(range(T))
+        ind_cols = list(range(T))
+        vals = np.ones(T)
+        if flag_b:
+            ind_rows = ind_rows + list(range(T))
+            ind_cols = ind_cols + [T] * T
+            vals = np.concatenate((vals, np.ones(T)))
+        if flag_c1:
+            ind_rows = ind_rows + list(range(T))
+            ind_cols = ind_cols + [T + cnt - 1] * T
+            vals = np.concatenate((vals, np.squeeze(gd_vec)))
+        P = spmatrix(vals, ind_rows, ind_cols, (T, T + cnt))
+        H = P.T * P
+        Py = P.T * matrix(fluor.astype(float))
+        sol = solvers.qp(
+            H, -Py, spdiag([-G, -spmatrix(
+                1., list(range(cnt)), list(range(cnt)))]), matrix(
+                    0., (T + cnt, 1)))
+        xx = sol['x']
+        c = np.array(xx[:T])
+        sp = np.array(G * matrix(c))
+        c = np.squeeze(c)
+        if flag_b:
+            b = np.array(xx[T + 1]) + b_lb
+        if flag_c1:
+            c1 = np.array(xx[-1])
+        sn = old_div(np.linalg.norm(fluor - c - c1 * gd_vec - b), np.sqrt(T))
+    else:  # readout picos solution
+        c = np.squeeze(calcium_fit.value)
+        sp = np.squeeze(np.asarray(G * calcium_fit.value))
+        if flag_b:
+            b = np.squeeze(b.value)
+        if flag_c1:
+            c1 = np.squeeze(c1.value)
+
+    return c, b, c1, g, sn, sp
+
+
+def cvxpy_foopsi(fluor, g, sn, b=None, c1=None, bas_nonneg=True, solvers=None):
+    """
+    Solves the deconvolution problem using the cvxpy package and the
+    ECOS/SCS library.
+    Args:
+        fluor: ndarray
+            fluorescence trace
+        g: list of doubles
+            parameters of the autoregressive model, cardinality equivalent to p
+        sn: double
+            estimated noise level
+        b: double
+            baseline level. If None it is estimated.
+        c1: double
+            initial value of calcium. If None it is estimated.
+        bas_nonneg: boolean
+            should the baseline be estimated
+        solvers: tuple of two strings
+            primary and secondary solvers to be used. Can be choosen between
+            ECOS, SCS, CVXOPT
+    Returns:
+        c: estimated calcium trace
+        b: estimated baseline
+        c1: esimtated initial calcium value
+        g: esitmated parameters of the autoregressive model
+        sn: estimated noise level
+        sp: estimated spikes
+    Raises:
+        ImportError 'cvxpy solver requires installation of cvxpy. Not working
+        in windows at the moment.'
+        ValueError 'Problem solved suboptimally or unfeasible'
+    """
+    # todo: check the result and gen_vector vars
+    try:
+        import cvxpy as cvx
+
+    except ImportError:  # XXX Is the below still true?
+        raise ImportError(
+            '''cvxpy solver requires installation of cvxpy.
+            Not working in windows at the moment.''')
+
+    if solvers is None:
+        solvers = ['ECOS', 'SCS']
+
+    T = fluor.size
+
+    # construct deconvolution matrix  (sp = G*c)
+    G = scipy.sparse.dia_matrix((np.ones((1, T)), [0]), (T, T))
+
+    for i, gi in enumerate(g):
+        G = G + \
+            scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
+
+    gr = np.roots(np.concatenate([np.array([1]), -g.flatten()]))
+    gd_vec = np.max(gr)**np.arange(T)  # decay vector for initial fluorescence
+    gen_vec = G.dot(scipy.sparse.coo_matrix(np.ones((T, 1))))
+
+    c = cvx.Variable(T)  # calcium at each time step
+    constraints = []
+    cnt = 0
+    if b is None:
+        flag_b = True
+        cnt += 1
+        b = cvx.Variable(1)  # baseline value
+        if bas_nonneg:
+            b_lb = 0
+        else:
+            b_lb = np.min(fluor)
+        constraints.append(b >= b_lb)
+    else:
+        flag_b = False
+
+    if c1 is None:
+        flag_c1 = True
+        cnt += 1
+        c1 = cvx.Variable(1)  # baseline value
+        constraints.append(c1 >= 0)
+    else:
+        flag_c1 = False
+
+    thrNoise = sn * np.sqrt(fluor.size)
+
+    try:
+        # minimize number of spikes
+        objective = cvx.Minimize(cvx.norm(G * c, 1))
+        constraints.append(G * c >= 0)
+        constraints.append(
+            cvx.norm(-c + fluor - b - gd_vec * c1, 2) <= thrNoise)
+        prob = cvx.Problem(objective, constraints)
+        result = prob.solve(solver=solvers[0])
+
+        if not (
+         prob.status == 'optimal' or prob.status == 'optimal_inaccurate'):
+            raise ValueError('Problem solved suboptimally or unfeasible')
+
+        print(('PROBLEM STATUS:' + prob.status))
+        sys.stdout.flush()
+    except (ValueError, cvx.SolverError):
+        # if solvers fail to solve the problem
+        lam = old_div(sn, 500)
+        constraints = constraints[:-1]
+        objective = cvx.Minimize(cvx.norm(-c + fluor - b - gd_vec *
+                                          c1, 2) + lam * cvx.norm(G * c, 1))
+        prob = cvx.Problem(objective, constraints)
+
+        try:  # in case scs was not installed properly
+            try:
+                print('TRYING AGAIN ECOS')
+                sys.stdout.flush()
+                result = prob.solve(solver=solvers[0])
+            except:
+                print((solvers[0] + ' DID NOT WORK TRYING ' + solvers[1]))
+                result = prob.solve(solver=solvers[1])
+        except:
+            sys.stderr.write(
+                '''***** SCS solver failed, try installing and compiling SCS
+                for much faster performance. Otherwise set the solvers in
+                tempora_params to ["ECOS","CVXOPT"]''')
+            sys.stderr.flush()
+            raise
+
+        if not (
+         prob.status == 'optimal' or prob.status == 'optimal_inaccurate'):
+            print(('PROBLEM STATUS:' + prob.status))
+            sp = fluor
+            c = fluor
+            b = 0
+            c1 = 0
+            return c, b, c1, g, sn, sp
+
+    sp = np.squeeze(np.asarray(G * c.value))
+    c = np.squeeze(np.asarray(c.value))
+    if flag_b:
+        b = np.squeeze(b.value)
+    if flag_c1:
+        c1 = np.squeeze(c1.value)
+
+    return c, b, c1, g, sn, sp
 
 
 def estimate_parameters(fluor, p=2, sn=None, g=None, range_ff=[0.25, 0.5],

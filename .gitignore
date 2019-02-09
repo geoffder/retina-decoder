@@ -1,8 +1,5 @@
-build/
 memmap_\.npz
 
 __pycache__/
 
 \.ipynb_checkpoints/
-
-*.pyd
