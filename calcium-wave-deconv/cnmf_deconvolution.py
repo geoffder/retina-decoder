@@ -6,6 +6,12 @@ from past.utils import old_div
 import sys
 from warnings import warn
 
+'''
+Taken from the CaImAn Toolbox. https://github.com/flatironinstitute/CaImAn
+Extricated with cnmf_oasis.pyx for ease of use by other members of the lab,
+outside of the context of the full CaImAn toolbox.
+'''
+
 
 def constrained_foopsi(
         fluor, bl=None,  c1=None, g=None,  sn=None, p=1,
