@@ -4,15 +4,10 @@ import matplotlib.pyplot as plt
 from sim_util import rotate, StackPlotter
 
 '''
-Just sketching this out right now. Ideally want to have base Classes for
-stimuli and cells, which are inherited by the Classes for specific stimuli and
-cells (e.g. Bars/Circles and Alphas/DSGCs).
-
 Need to decide the level of complexity of cell state simulation. Actually model
 a Vm, and have Ca++ channels that respond to it? Or just model the 'activation'
 or 'signal' of the cell that goes up and down with +ve/-ve stimuli?
-
-See learning/neuro folder for simple biophysical cell simulations.
+-> See learning/neuro folder for simple biophysical cell simulations.
 '''
 
 
@@ -24,6 +19,7 @@ class NetworkModel(object):
         self.origin = (dims[0]//2, dims[1]//2)
         self.t = 0
         self.stims = []
+        self.stimMovies = []
 
     def populate(self, pop=1):
         self.cells = []
@@ -36,14 +32,32 @@ class NetworkModel(object):
                 length=100, radius=100):
 
         stim = Stim(
-            self, type=type, startPos=startPos, tOn=tOn, tOff=tOff,
-            vel=vel, theta=0, orient=0, amp=1, change=0, width=width,
+            self, type=type, startPos=startPos, tOn=tOn, tOff=tOff, vel=vel,
+            theta=theta, orient=orient, amp=amp, change=change, width=width,
             length=length, radius=radius
         )
 
         self.stims.append(stim)
 
+    def storeStimMov(self):
+        '''
+        Add together all stims in to one movie and store in a list. Useful
+        for experiments with mutliple stimulus presentations.
+        '''
+        movie = np.zeros((*self.dims, self.tstop//self.dt))
+        for stim in self.stims:
+            movie += np.dstack(stim.rec)
+        self.stimMovies.append(movie)
+
+    def clearStims(self):
+        self.stims = []
+
     def step(self):
+        '''
+        Run through a model time-step. First updating positions of stimuli,
+        then checking for interactions with each of the cells. Cells also go
+        through updates, such as Vm/activation decay.
+        '''
         for stim in self.stims:
             stim.move()
             for cell in self.cells:
@@ -53,36 +67,47 @@ class NetworkModel(object):
         self.t += self.dt
 
     def run(self):
+        'Run through from t=0 to t=tstop and store data in lists.'
+        # step through experiment until tstop
         for t in range(self.tstop//self.dt):
             self.step()
+        # store recordings from cells, and the presented stim for this run
+        for cell in self.cells:
+            cell.storeRec()
+        self.storeStimMov()
 
     def plotCells(self):
+        'Plot map of cells and their receptive fields.'
         net = np.zeros(self.dims)
+        fig, ax = plt.subplots(1)
         for cell in self.cells:
             net += cell.somaMask*1.
             net += cell.rfMask*.2
-        fig = plt.imshow(net)
-        return fig
+        ax.imshow(net)
+        for i, cell in enumerate(self.cells):
+            ax.scatter(cell.pos[1], cell.pos[0], c='r', alpha=.5, s=80,
+                       marker='$%s$' % i)
+        return fig, ax
 
     def plotStims(self):
-        movies = []
-        for stim in self.stims:
-
-            movies.append(np.dstack(stim.rec))
-        # movie = np.sum(movies, keepdims=True)
+        'Plot stimulus movies.'
+        movie = np.dstack(self.stimMovies)
         fig, ax = plt.subplots(1)
-        stack = StackPlotter(ax, movies[0], delta=10)
+        stack = StackPlotter(ax, movie, delta=50)
         fig.canvas.mpl_connect('scroll_event', stack.onscroll)
         return fig, ax, stack
 
     def plotRecs(self):
-        fig, axes = plt.subplots(len(self.cells))
+        fig, axes = plt.subplots(len(self.cells), figsize=(6, 8))
         for i, cell in enumerate(self.cells):
-            axes[i].plot(np.arange(self.tstop)*self.dt, cell.rec)
+            rec = np.concatenate(cell.recs, axis=0)
+            axes[i].plot(np.arange(rec.shape[0])*self.dt, rec)
+            axes[i].set_ylabel('c%s' % i, rotation=0)
+        fig.tight_layout()
         return fig, axes
 
     def plotExperiment(self):
-        self.plotCells()
+        cellFig, cellAx = self.plotCells()
         stimFig, stimAm, stimStack = self.plotStims()
         self.plotRecs()
         plt.show()
@@ -122,7 +147,7 @@ class Stim(object):
     def drawMask(self):
         if self.type == 'bar':
             x, y = np.ogrid[:self.model.dims[0], :self.model.dims[1]]
-            x, y = rotate(self.model.origin, x, y, self.orient)
+            x, y = rotate(self.pos, x, y, np.radians(self.orient))
             self.mask = (
                 (np.abs(x-self.pos[0]) <= self.width)
                 * (np.abs(y-self.pos[1]) <= self.length)
@@ -140,7 +165,7 @@ class Stim(object):
 
 
 class Cell(object):
-    def __init__(self, model, pos=[0, 0], diam=10, rf=50, dt=1):
+    def __init__(self, model, pos=[0, 0], diam=20, rf=50, dt=1):
         self.model = model  # the network model this cell belongs to
         self.pos = pos
         self.diam = diam  # soma diameter
@@ -150,6 +175,7 @@ class Cell(object):
         self.Vm = 0
         self.dtau = 10  # decay tau
         self.rec = []
+        self.recs = []
 
     def drawMask(self, radius):
         x, y = np.ogrid[:self.model.dims[0], :self.model.dims[1]]
@@ -168,3 +194,7 @@ class Cell(object):
 
     def excite(self, strength):
         self.Vm += strength
+
+    def storeRec(self):
+        self.recs.append(self.rec)
+        self.rec = []

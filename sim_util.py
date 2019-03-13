@@ -1,6 +1,11 @@
 import numpy as np
 # import matplotlib.pyplot as plt
 
+'''
+Collection of utility classes and functions that are used by retina_sim, but
+are not a direct part of the model itself.
+'''
+
 
 def rotate(origin, X, Y, angle):
     """
@@ -15,6 +20,12 @@ def rotate(origin, X, Y, angle):
 
 
 class StackPlotter(object):
+    '''
+    Returns Object for cycling through frames of a 3D image stack using the
+    mouse scroll wheel. Takes the pyplot axis object and data as the first two
+    arguments. Additionally, use delta to set the number of frames each step of
+    the wheel skips through.
+    '''
     def __init__(self, ax, X, delta=10):
         self.ax = ax
         ax.set_title('use scroll wheel to navigate images')

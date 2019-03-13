@@ -1,5 +1,11 @@
+import numpy as np
 import matplotlib.pyplot as plt
 from retina_sim import NetworkModel, Cell, Stim
+
+'''
+Collection of functions for testing out components of retina_sim, and the
+combination thereof into complete experiments.
+'''
 
 
 def testDecay():
@@ -35,6 +41,30 @@ def testStimMask():
 def testRun():
     model = NetworkModel()
     model.populate(pop=10)
-    model.newStim(type='bar', width=10, length=400, vel=1, startPos=[0, 50])
+    model.newStim(type='bar', theta=45, orient=-45, width=10, length=400,
+                  vel=1, startPos=[200, 200])
+    # model.newStim(type='circle', theta=45, radius=50, vel=1,
+    #               startPos=[200, 200])
     model.run()
     model.plotExperiment()
+
+
+def dirRun():
+    model = NetworkModel(tstop=500)
+    model.populate(pop=10)
+    dirs = [0, 45, 90, 135, 180, 225, 270, 315]
+    cx, cy = model.origin
+    for d in dirs:
+        pos = [cx - cx*np.cos(np.deg2rad(d)), cy - cy*np.sin(np.deg2rad(d))]
+        # model.newStim(type='circle', theta=d, radius=50, vel=1,
+        #               startPos=pos)
+        model.newStim(type='bar', theta=d, orient=-d, width=10, length=100,
+                      vel=1, startPos=pos)
+        model.run()
+        model.clearStims()
+    model.plotExperiment()
+
+
+if __name__ == '__main__':
+    # testRun()
+    dirRun()
