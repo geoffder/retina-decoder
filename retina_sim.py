@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import numba
 
 from sim_util import rotate, StackPlotter
 
@@ -14,26 +13,49 @@ or 'signal' of the cell that goes up and down with +ve/-ve stimuli?
 
 class NetworkModel(object):
     def __init__(self, tstop=500, dt=1, dims=[600, 600]):
-        self.tstop = tstop
-        self.dt = dt
-        self.dims = dims
+        self.tstop = tstop  # run duration / stop time
+        self.dt = dt  # timestep
+        self.dims = dims  # dimensions of network matrix
         self.margin = 100  # no cells allowed within this distance of edge
         self.origin = (dims[0]//2, dims[1]//2)
-        self.t = 0
+        self.t = 0  # current time
         self.stims = []
         self.stimMovies = []
 
-    def populate(self, pop=1):
+    def populate(self, pop=None, spacing=None, jitter=1):
+        """
+        Use pop to set a cell population number and uniformly distribute cells
+        within the network window, or use spacing with jitter to place cells in
+        a noisy grid / 'mosaic'.
+        """
         self.cells = []
-        for i in range(pop):
-            pos = [np.random.randint(self.margin, dim-self.margin+1)
-                   for dim in self.dims]
-            self.cells.append(Cell(self, pos=pos))
+        if pop is not None:
+            for i in range(pop):
+                pos = [np.random.randint(self.margin, dim-self.margin+1)
+                       for dim in self.dims]
+                self.cells.append(Cell(self, pos=pos))
+        elif spacing is not None:
+            xspace, yspace = [np.arange(self.margin, dim-self.margin, spacing)
+                              for dim in self.dims]
+            for i in range(xspace.shape[0]):
+                for j in range(yspace.shape[0]):
+                    theta = 2 * np.pi * np.random.random()
+                    radius = np.random.randn()*jitter
+                    pos = [xspace[i] + radius * np.cos(np.deg2rad(theta)),
+                           yspace[j] + radius * np.sin(np.deg2rad(theta))]
+                    self.cells.append(Cell(self, pos=pos))
+        else:
+            print("No cell density params given. Crashing...")
 
     def newStim(self, type='bar', startPos=[0, 0], tOn=0, tOff=None,
                 vel=0, theta=0, orient=0, amp=1, change=0, width=10,
                 length=100, radius=100):
-
+        """
+        Generate a new stimulus object for this model. Multiple independent
+        stimuli are possible, simply generate each with this function before
+        executing run(). A movie will be made with the sums of each stimulus
+        mask for viewing and storage.
+        """
         stim = Stim(
             self, type=type, startPos=startPos, tOn=tOn, tOff=tOff, vel=vel,
             theta=theta, orient=orient, amp=amp, change=change, width=width,
@@ -83,15 +105,30 @@ class NetworkModel(object):
     def plotCells(self):
         "Plot map of cells and their receptive fields."
         net = np.zeros(self.dims)
-        fig, ax = plt.subplots(1)
         for cell in self.cells:
             net += cell.somaMask*1.
             net += cell.rfMask*.2
+        fig, ax = plt.subplots(1)
         ax.imshow(net)
         for i, cell in enumerate(self.cells):
             ax.scatter(cell.pos[1], cell.pos[0], c='r', alpha=.5, s=80,
                        marker='$%s$' % i)
         return fig, ax
+
+    def netMovie(self):
+        """
+        This is very slow, probably because of creating a 3D matrix movie for
+        each cell. Instead I should just make one matrix here and use the recs
+        and coordinates from the cells to build a movie from scratch.
+        """
+        movie = np.zeros((*self.dims, self.tstop//self.dt)).astype(np.float)
+        for cell in self.cells:
+            movie += cell.getMovie()
+        # movie = movie.astype(np.uint8)  # put into range of 0 255 first
+        fig, ax = plt.subplots(1)
+        stack = StackPlotter(ax, movie, delta=15)
+        fig.canvas.mpl_connect('scroll_event', stack.onscroll)
+        return fig, ax, stack
 
     def plotStims(self):
         "Plot stimulus movies."
@@ -103,11 +140,15 @@ class NetworkModel(object):
 
     def plotRecs(self):
         "Plot recording of each cell for whole 'experiment'"
-        fig, axes = plt.subplots(len(self.cells), figsize=(6, 8))
+        nrows = 10
+        ncols = len(self.cells)//nrows
+        ncols += 1 if len(self.cells) % nrows > 0 else 0
+        fig, axes = plt.subplots(nrows, ncols, figsize=(19, 9))
         for i, cell in enumerate(self.cells):
             rec = np.concatenate(cell.recs, axis=0)
-            axes[i].plot(np.arange(rec.shape[0])*self.dt, rec)
-            axes[i].set_ylabel('c%s' % i, rotation=0)
+            axes[i % nrows, i//nrows].plot(
+                np.arange(rec.shape[0])*self.dt, rec)
+            axes[i % nrows, i//nrows].set_ylabel('c%s' % i, rotation=0)
         fig.tight_layout()
         return fig, axes
 
@@ -116,22 +157,24 @@ class NetworkModel(object):
         cellFig, cellAx = self.plotCells()
         stimFig, stimAx, stimStack = self.plotStims()
         recFig, recAx = self.plotRecs()
+        movFig, movAx, movStack = self.netMovie()
         plt.show()
 
 
 class Stim(object):
     """
-    Create stimulus objects (e.g. circles and bars).
+    Create stimulus objects (e.g. circles and bars). The mask of the stimulus
+    will be saved into rec at each timestep.
     """
     def __init__(self, model, type='bar', startPos=[0, 0], tOn=0, tOff=None,
                  vel=0, theta=0, orient=0, amp=1, change=0, width=10,
                  length=100, radius=100):
         self.model = model  # the network model this stim belongs to
         # basics
-        self.type = type
-        self.startPos = startPos
-        self.pos = startPos
-        self.tOn = tOn
+        self.type = type  # string indicating stimulus type (e.g. circle)
+        self.startPos = startPos  # starting position coordinates
+        self.pos = startPos  # current position  coordinates
+        self.tOn = tOn  # time stimulus appears
         self.tOff = model.tstop if tOff is None else tOff
         self.rec = []  # store masks from each timestep
         # movement
@@ -170,6 +213,10 @@ class Stim(object):
             self.mask = r2 <= self.radius**2
 
     def check(self, rfMask):
+        """
+        Takes recepetive field mask from cell and compares with the mask of
+        this stimulus.
+        """
         return np.sum(self.mask*rfMask) > 0  # return if stim is in RF at all
 
 
@@ -181,7 +228,7 @@ class Cell(object):
     """
     def __init__(self, model, pos=[0, 0], diam=20, rf=50, dt=1):
         self.model = model  # the network model this cell belongs to
-        self.pos = pos
+        self.pos = pos  # centre coordinates
         self.diam = diam  # soma diameter
         self.somaMask = self.drawMask(diam//2)
         self.rf = rf  # receptive field radius
@@ -199,6 +246,13 @@ class Cell(object):
         # circular mask
         mask = r2 <= radius**2
         return mask
+
+    def getMovie(self):
+        all_rec = np.concatenate(self.recs, axis=0)
+        all_rec = all_rec.reshape(all_rec.shape[0], 1, 1)
+        shape = (all_rec.shape[0], *self.somaMask.shape)
+        movie = np.broadcast_to(self.somaMask, shape).astype(np.float)*all_rec
+        return np.transpose(movie, (1, 2, 0))
 
     def decay(self):
         "Decay of activation that occurs with each timestep."

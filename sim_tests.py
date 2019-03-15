@@ -38,6 +38,13 @@ def testStimMask():
     bar.check(cellA.rfMask)
 
 
+def testPop():
+    model = NetworkModel()
+    model.populate(spacing=40, jitter=10)
+    model.plotCells()
+    plt.show()
+
+
 def testRun():
     model = NetworkModel()
     model.populate(pop=10)
@@ -51,15 +58,18 @@ def testRun():
 
 def dirRun():
     model = NetworkModel(tstop=500)
-    model.populate(pop=10)
-    dirs = [0, 45, 90, 135, 180, 225, 270, 315]
+    model.populate(spacing=40, jitter=10)
+    # dirs = [0, 45, 90, 135, 180, 225, 270, 315]
+    dirs = [0]
     cx, cy = model.origin
+    print("Running... \ndirs: ", end='')
     for d in dirs:
+        print(d, end=' ')
         pos = [cx - cx*np.cos(np.deg2rad(d)), cy - cy*np.sin(np.deg2rad(d))]
-        # model.newStim(type='circle', theta=d, radius=50, vel=1,
-        #               startPos=pos)
-        model.newStim(type='bar', theta=d, orient=-d, width=10, length=100,
-                      vel=1, startPos=pos)
+        model.newStim(type='circle', theta=d, radius=50, vel=1,
+                      startPos=pos)
+        # model.newStim(type='bar', theta=d, orient=-d, width=10, length=100,
+        #               vel=1, startPos=pos)
         model.run()
         model.clearStims()
     model.plotExperiment()
@@ -68,3 +78,4 @@ def dirRun():
 if __name__ == '__main__':
     # testRun()
     dirRun()
+    # testPop()
