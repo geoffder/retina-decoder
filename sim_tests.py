@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from retina_sim import NetworkModel, Cell, Stim
 
+# import time as timer
+
 '''
 Collection of functions for testing out components of retina_sim, and the
 combination thereof into complete experiments.
@@ -57,21 +59,22 @@ def testRun():
 
 
 def dirRun():
-    model = NetworkModel(tstop=500)
+    model = NetworkModel(tstop=600)
     model.populate(spacing=40, jitter=10)
-    # dirs = [0, 45, 90, 135, 180, 225, 270, 315]
-    dirs = [0]
+    dirs = [0, 45, 90, 135, 180, 225, 270, 315]
+    # dirs = [0]
     cx, cy = model.origin
     print("Running... \ndirs: ", end='')
     for d in dirs:
         print(d, end=' ')
         pos = [cx - cx*np.cos(np.deg2rad(d)), cy - cy*np.sin(np.deg2rad(d))]
-        model.newStim(type='circle', theta=d, radius=50, vel=1,
-                      startPos=pos)
-        # model.newStim(type='bar', theta=d, orient=-d, width=10, length=100,
-        #               vel=1, startPos=pos)
+        # model.newStim(type='circle', theta=d, radius=50, vel=1,
+        #               startPos=pos)
+        model.newStim(type='bar', theta=d, orient=-d, width=10, length=100,
+                      vel=1, startPos=pos)
         model.run()
         model.clearStims()
+    print('')  # next line
     model.plotExperiment()
 
 

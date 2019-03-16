@@ -19,6 +19,7 @@ class NetworkModel(object):
         self.margin = 100  # no cells allowed within this distance of edge
         self.origin = (dims[0]//2, dims[1]//2)
         self.t = 0  # current time
+        self.runs = 0  # number of completed 'runs'
         self.stims = []
         self.stimMovies = []
 
@@ -100,7 +101,9 @@ class NetworkModel(object):
         # store recordings from cells, and the presented stim for this run
         for cell in self.cells:
             cell.storeRec()
+            cell.reset()
         self.storeStimMov()
+        self.runs += 1
 
     def plotCells(self):
         "Plot map of cells and their receptive fields."
@@ -117,14 +120,18 @@ class NetworkModel(object):
 
     def netMovie(self):
         """
-        This is very slow, probably because of creating a 3D matrix movie for
-        each cell. Instead I should just make one matrix here and use the recs
-        and coordinates from the cells to build a movie from scratch.
+        Take the recordings of each cell and build a movie of their activity
+        as a network, analogous to somatic Ca++ recordings.
         """
-        movie = np.zeros((*self.dims, self.tstop//self.dt)).astype(np.float)
+        movie = np.zeros(
+            (*self.dims, self.runs*(self.tstop//self.dt))).astype(np.float)
+        x, y = np.ogrid[:self.dims[0], :self.dims[1]]
         for cell in self.cells:
-            movie += cell.getMovie()
-        # movie = movie.astype(np.uint8)  # put into range of 0 255 first
+            cx, cy = cell.pos
+            r2 = (x - cx)**2 + (y - cy)**2
+            r = (cell.diam/2)**2
+            movie[r2 <= r, :] += np.concatenate(cell.recs, axis=0)
+        # build the plot
         fig, ax = plt.subplots(1)
         stack = StackPlotter(ax, movie, delta=15)
         fig.canvas.mpl_connect('scroll_event', stack.onscroll)
@@ -228,12 +235,12 @@ class Cell(object):
     """
     def __init__(self, model, pos=[0, 0], diam=20, rf=50, dt=1):
         self.model = model  # the network model this cell belongs to
-        self.pos = pos  # centre coordinates
+        self.pos = np.array(pos)  # centre coordinates (constant)
         self.diam = diam  # soma diameter
         self.somaMask = self.drawMask(diam//2)
         self.rf = rf  # receptive field radius
         self.rfMask = self.drawMask(rf)
-        self.Vm = 0
+        self.Vm = 0.
         self.dtau = 10  # decay tau
         self.rec = []
         self.recs = []
@@ -247,13 +254,6 @@ class Cell(object):
         mask = r2 <= radius**2
         return mask
 
-    def getMovie(self):
-        all_rec = np.concatenate(self.recs, axis=0)
-        all_rec = all_rec.reshape(all_rec.shape[0], 1, 1)
-        shape = (all_rec.shape[0], *self.somaMask.shape)
-        movie = np.broadcast_to(self.somaMask, shape).astype(np.float)*all_rec
-        return np.transpose(movie, (1, 2, 0))
-
     def decay(self):
         "Decay of activation that occurs with each timestep."
         delta = self.Vm * (1 - np.exp(-self.model.dt/self.dtau))
@@ -266,3 +266,6 @@ class Cell(object):
     def storeRec(self):
         self.recs.append(self.rec)
         self.rec = []
+
+    def reset(self):
+        self.Vm = 0.
