@@ -1,9 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import multiprocessing as mp
-from multiprocessing import get_context
 from sim_util import rotate, StackPlotter
 
+import multiprocessing as mp
+from multiprocessing import get_context
 """
 Need to decide the level of complexity of cell state simulation. Actually model
 a Vm, and have Ca++ channels that respond to it? Or just model the 'activation'
@@ -35,7 +35,7 @@ class NetworkModel(object):
             for i in range(pop):
                 pos = [np.random.randint(self.margin, dim-self.margin+1)
                        for dim in self.dims]
-                self.cells.append(Cell(self, pos=pos))
+                self.cells.append(Cell(self.dims, self.dt, pos=pos))
         elif spacing is not None:
             xspace, yspace = [np.arange(self.margin, dim-self.margin, spacing)
                               for dim in self.dims]
@@ -45,7 +45,7 @@ class NetworkModel(object):
                     radius = np.random.randn()*jitter
                     pos = [xspace[i] + radius * np.cos(np.deg2rad(theta)),
                            yspace[j] + radius * np.sin(np.deg2rad(theta))]
-                    self.cells.append(Cell(self, pos=pos))
+                    self.cells.append(Cell(self.dims, self.dt, pos=pos))
         else:
             print("No cell density params given. Crashing...")
 
@@ -64,9 +64,9 @@ class NetworkModel(object):
         mask for viewing and storage.
         """
         stim = Stim(
-            self, type=type, startPos=startPos, tOn=tOn, tOff=tOff, vel=vel,
-            theta=theta, orient=orient, amp=amp, change=change, width=width,
-            length=length, radius=radius
+            self.dims, self.dt, type=type, startPos=startPos, tOn=tOn,
+            tOff=tOff, vel=vel, theta=theta, orient=orient, amp=amp,
+            change=change, width=width, length=length, radius=radius
         )
 
         self.stims.append(stim)
@@ -90,6 +90,7 @@ class NetworkModel(object):
         then checking for interactions with each of the cells. Cells also go
         through updates, such as Vm/activation decay.
         """
+
         for stim in self.stims:
             stim.move()
         with get_context("spawn").Pool(mp.cpu_count()) as pool:
@@ -205,16 +206,17 @@ class Stim(object):
     Create stimulus objects (e.g. circles and bars). The mask of the stimulus
     will be saved into rec at each timestep.
     """
-    def __init__(self, model, type='bar', startPos=[0, 0], tOn=0, tOff=None,
-                 vel=0, theta=0, orient=0, amp=1, change=0, width=10,
-                 length=100, radius=100):
-        self.model = model  # the network model this stim belongs to
+    def __init__(self, netDims, dt, type='bar', startPos=[0, 0], tOn=0,
+                 tOff=None, vel=0, theta=0, orient=0, amp=1, change=0,
+                 width=10, length=100, radius=100):
+        self.netDims = netDims  # dims of the network model this cell is in
+        self.dt = dt  # timestep of the network model
         # basics
         self.type = type  # string indicating stimulus type (e.g. circle)
         self.startPos = startPos  # starting position coordinates
         self.pos = startPos  # current position  coordinates
         self.tOn = tOn  # time stimulus appears
-        self.tOff = model.tstop if tOff is None else tOff
+        self.tOff = tOff  # time stimulus turns off
         self.rec = []  # store masks from each timestep
         # movement
         self.vel = vel  # velocity
@@ -230,14 +232,16 @@ class Stim(object):
         self.radius = radius
 
     def move(self):
-        self.pos[0] += self.vel/self.model.dt * np.cos(np.deg2rad(self.theta))
-        self.pos[1] += self.vel/self.model.dt * np.sin(np.deg2rad(self.theta))
+        "Move the centre position of this stim as a function of its velocity."
+        self.pos[0] += self.vel/self.dt * np.cos(np.deg2rad(self.theta))
+        self.pos[1] += self.vel/self.dt * np.sin(np.deg2rad(self.theta))
         self.drawMask()
         self.rec.append(self.mask)
 
     def drawMask(self):
+        "Draw shape with which this stimulus interacts with cells."
         if self.type == 'bar':
-            x, y = np.ogrid[:self.model.dims[0], :self.model.dims[1]]
+            x, y = np.ogrid[:self.netDims[0], :self.netDims[1]]
             x, y = x.astype(np.float), y.astype(np.float)
             x, y = rotate(self.pos, x, y, np.radians(self.orient))
             self.mask = (
@@ -245,7 +249,7 @@ class Stim(object):
                 * (np.abs(y-self.pos[1]) <= self.length)
             )
         elif self.type == 'circle':
-            x, y = np.ogrid[:self.model.dims[0], :self.model.dims[1]]
+            x, y = np.ogrid[:self.netDims[0], :self.netDims[1]]
             x, y = x.astype(np.float), y.astype(np.float)
             cx, cy = self.pos  # centre coordniates
             # convert cartesian --> polar coordinates
@@ -267,8 +271,9 @@ class Cell(object):
     that have different excite/inhib functions to allow different stimulus
     preferrences.
     """
-    def __init__(self, model, pos=[0, 0], diam=20, rf=50, dt=1):
-        self.model = model  # the network model this cell belongs to
+    def __init__(self, netDims, dt, pos=[0, 0], diam=20, rf=50):
+        self.netDims = netDims  # dims of the network model this cell is in
+        self.dt = dt  # timestep of the network model
         self.pos = np.array(pos)  # centre coordinates (constant)
         self.diam = diam  # soma diameter
         self.somaMask = self.drawMask(diam//2)
@@ -280,7 +285,8 @@ class Cell(object):
         self.recs = []
 
     def drawMask(self, radius):
-        x, y = np.ogrid[:self.model.dims[0], :self.model.dims[1]]
+        "Draws cell body and receptive field (for display and stimulation)."
+        x, y = np.ogrid[:self.netDims[0], :self.netDims[1]]
         x, y = x.astype(np.float), y.astype(np.float)
         cx, cy = self.pos  # centre coordniates
         # convert cartesian --> polar coordinates
@@ -291,7 +297,7 @@ class Cell(object):
 
     def decay(self):
         "Decay of activation that occurs with each timestep."
-        delta = self.Vm * (1 - np.exp(-self.model.dt/self.dtau))
+        delta = self.Vm * (1 - np.exp(-self.dt/self.dtau))
         self.Vm = np.max([0, self.Vm - delta])
         self.rec.append(self.Vm)  # last thing each time step, so record Vm
 

@@ -61,8 +61,8 @@ def testRun():
 def dirRun():
     model = NetworkModel(tstop=600)
     model.populate(spacing=40, jitter=10)
-    # dirs = [0, 45, 90, 135, 180, 225, 270, 315]
-    dirs = [0]
+    dirs = [0, 45, 90, 135, 180, 225, 270, 315]
+    # dirs = [0]
     cx, cy = model.origin
     print("Running... \ndirs: ", end='')
     for d in dirs:
