@@ -49,6 +49,11 @@ class NetworkModel(object):
         else:
             print("No cell density params given. Crashing...")
 
+        # for attempt at parallelization
+        sz = len(self.cells)//4
+        self.cellGroups = [self.cells[i*sz:i*sz+sz] for i in range(4)]
+        self.cellGroups[-1] += self.cells[4*sz:]
+
     def newStim(self, type='bar', startPos=[0, 0], tOn=0, tOff=None,
                 vel=0, theta=0, orient=0, amp=1, change=0, width=10,
                 length=100, radius=100):
@@ -85,6 +90,12 @@ class NetworkModel(object):
         then checking for interactions with each of the cells. Cells also go
         through updates, such as Vm/activation decay.
         """
+        for stim in self.stims:
+            stim.move()
+        with get_context("spawn").Pool(mp.cpu_count()) as pool:
+            for grp in self.cellGroups:
+                pool.apply(self.paraStep, args=(self.stims, grp))
+
         # for stim in self.stims:
         #     stim.move()
         #     with get_context("spawn").Pool(mp.cpu_count()) as pool:
@@ -97,13 +108,21 @@ class NetworkModel(object):
         #         pool.apply(cell.decay)
 
         # old faithful serial chungus
-        for stim in self.stims:
-            stim.move()
-            for cell in self.cells:
-                cell.excite(stim.check(cell.rfMask))
-        for cell in self.cells:
-            cell.decay()
+        # for stim in self.stims:
+        #     stim.move()
+        #     for cell in self.cells:
+        #         cell.excite(stim.check(cell.rfMask))
+        # for cell in self.cells:
+        #     cell.decay()
         self.t += self.dt
+
+    @staticmethod
+    def paraStep(stims, cells):
+        for stim in stims:
+            for cell in cells:
+                cell.excite(stim.check(cell.rfMask))
+        for cell in cells:
+            cell.decay()
 
     def run(self):
         "Run through from t=0 to t=tstop and store data in lists."

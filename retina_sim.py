@@ -198,12 +198,14 @@ class Stim(object):
         self.radius = radius
 
     def move(self):
+        "Move the centre position of this stim as a function of its velocity."
         self.pos[0] += self.vel/self.model.dt * np.cos(np.deg2rad(self.theta))
         self.pos[1] += self.vel/self.model.dt * np.sin(np.deg2rad(self.theta))
         self.drawMask()
         self.rec.append(self.mask)
 
     def drawMask(self):
+        "Draw shape with which this stimulus interacts with cells."
         if self.type == 'bar':
             x, y = np.ogrid[:self.model.dims[0], :self.model.dims[1]]
             x, y = x.astype(np.float), y.astype(np.float)
@@ -248,6 +250,7 @@ class Cell(object):
         self.recs = []
 
     def drawMask(self, radius):
+        "Draws cell body and receptive field (for display and stimulation)."
         x, y = np.ogrid[:self.model.dims[0], :self.model.dims[1]]
         x, y = x.astype(np.float), y.astype(np.float)
         cx, cy = self.pos  # centre coordniates
