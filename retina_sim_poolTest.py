@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import multiprocessing as mp
+from multiprocessing import get_context
 from sim_util import rotate, StackPlotter
 
 """
@@ -83,7 +85,18 @@ class NetworkModel(object):
         then checking for interactions with each of the cells. Cells also go
         through updates, such as Vm/activation decay.
         """
+        # for stim in self.stims:
+        #     stim.move()
+        #     with get_context("spawn").Pool(mp.cpu_count()) as pool:
+        #         checks = pool.map(stim.check, [c.rfMask for c in self.cells])
+        #     with get_context("spawn").Pool(mp.cpu_count()) as pool:
+        #         for i in range(len(self.cells)):
+        #             pool.apply(self.cells[i].excite, args=([checks[i]]))
+        # with get_context("spawn").Pool(mp.cpu_count()) as pool:
+        #     for cell in self.cells:
+        #         pool.apply(cell.decay)
 
+        # old faithful serial chungus
         for stim in self.stims:
             stim.move()
             for cell in self.cells:
