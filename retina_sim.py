@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sim_util import rotate, StackPlotter
+import time as timer
 
 """
 Need to decide the level of complexity of cell state simulation. Actually model
@@ -21,6 +22,7 @@ class NetworkModel(object):
         self.runs = 0  # number of completed 'runs'
         self.stims = []
         self.stimMovies = []
+        self.timers = np.zeros(3)
 
     def populate(self, pop=None, spacing=None, jitter=1):
         """
@@ -83,16 +85,23 @@ class NetworkModel(object):
         then checking for interactions with each of the cells. Cells also go
         through updates, such as Vm/activation decay.
         """
-
         for stim in self.stims:
+            start = timer.time()
             stim.move()
+            self.timers[0] += timer.time() - start
+            start = timer.time()
             for cell in self.cells:
                 cell.excite(stim.check(cell.rfMask))
+            self.timers[1] += timer.time() - start
+        start = timer.time()
         for cell in self.cells:
             cell.decay()
+        self.timers[2] += timer.time() - start
         self.t += self.dt
 
     def run(self):
+        self.timers *= 0
+        start = timer.time()
         "Run through from t=0 to t=tstop and store data in lists."
         self.t = 0
         # step through experiment until tstop
@@ -104,6 +113,9 @@ class NetworkModel(object):
             cell.reset()
         self.storeStimMov()
         self.runs += 1
+        print('total run time:', timer.time()-start)
+        print('moving time:', self.timers[0], 'excite time:', self.timers[1],
+              'decay time:', self.timers[2])
 
     def plotCells(self):
         "Plot map of cells and their receptive fields."
@@ -209,7 +221,7 @@ class Stim(object):
         "Draw shape with which this stimulus interacts with cells."
         if self.type == 'bar':
             x, y = np.ogrid[:self.netDims[0], :self.netDims[1]]
-            x, y = x.astype(np.float), y.astype(np.float)
+            # x, y = x.astype(np.float), y.astype(np.float)
             x, y = rotate(self.pos, x, y, np.radians(self.orient))
             self.mask = (
                 (np.abs(x-self.pos[0]) <= self.width)
@@ -217,7 +229,7 @@ class Stim(object):
             )
         elif self.type == 'circle':
             x, y = np.ogrid[:self.netDims[0], :self.netDims[1]]
-            x, y = x.astype(np.float), y.astype(np.float)
+            # x, y = x.astype(np.float), y.astype(np.float)
             cx, cy = self.pos  # centre coordniates
             # convert cartesian --> polar coordinates
             r2 = (x - cx)**2 + (y - cy)**2
@@ -227,9 +239,13 @@ class Stim(object):
     def check(self, rfMask):
         """
         Takes recepetive field mask from cell and compares with the mask of
-        this stimulus.
+        this stimulus. If using bool masks, rather than int/float masks,
+        np.count_nonzero is much faster (~6x) than np.sum when calculating
+        overlap. However, this precludes the use of stimuli with masks that are
+        non-boolean (e.g. gradients like sine gratings).
         """
-        return np.sum(self.mask*rfMask) > 0  # return if stim is in RF at all
+        # return np.sum(self.mask*rfMask) > 0  # return if stim is in RF at all
+        return np.count_nonzero(self.mask*rfMask) > 0
 
 
 class Cell(object):
@@ -254,7 +270,7 @@ class Cell(object):
     def drawMask(self, radius):
         "Draws cell body and receptive field (for display and stimulation)."
         x, y = np.ogrid[:self.netDims[0], :self.netDims[1]]
-        x, y = x.astype(np.float), y.astype(np.float)
+        # x, y = x.astype(np.float), y.astype(np.float)
         cx, cy = self.pos  # centre coordniates
         # convert cartesian --> polar coordinates
         r2 = (x - cx)**2 + (y - cy)**2
