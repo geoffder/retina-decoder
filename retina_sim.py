@@ -143,6 +143,7 @@ class NetworkModel(object):
             r2 = (x - cx)**2 + (y - cy)**2
             r = (cell.diam/2)**2
             movie[r2 <= r, :] += np.concatenate(cell.recs, axis=0)
+
         # build the plot
         fig, ax = plt.subplots(1)
         stack = StackPlotter(ax, movie, delta=15)
