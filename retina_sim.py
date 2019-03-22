@@ -1,4 +1,5 @@
 import numpy as np
+# from scipy import sparse
 import matplotlib.pyplot as plt
 from sim_util import rotate, StackPlotter
 import time as timer
@@ -94,6 +95,7 @@ class NetworkModel(object):
             start = timer.time()
             for cell in self.cells:
                 cell.excite(stim.check(cell.rfMask))
+                # cell.excite(stim.check(cell.rfMask_sparse))
             self.timers[1] += timer.time() - start
         start = timer.time()
         for cell in self.cells:
@@ -218,6 +220,7 @@ class Stim(object):
         self.pos[0] += self.vel/self.dt * np.cos(np.deg2rad(self.theta))
         self.pos[1] += self.vel/self.dt * np.sin(np.deg2rad(self.theta))
         self.drawMask()
+        # self.mask_sparse = sparse.csc_matrix(self.mask)
         self.rec.append(self.mask)
 
     def drawMask(self):
@@ -249,6 +252,7 @@ class Stim(object):
         """
         # return np.sum(self.mask*rfMask) > 0  # return if stim is in RF at all
         return np.count_nonzero(self.mask*rfMask) > 0
+        # return self.mask_sparse.multiply(rfMask).count_nonzero()
 
 
 class Cell(object):
@@ -265,6 +269,7 @@ class Cell(object):
         self.somaMask = self.drawMask(diam//2)
         self.rf = rf  # receptive field radius
         self.rfMask = self.drawMask(rf)
+        # self.rfMask_sparse = sparse.csc_matrix(self.rfMask)
         self.Vm = 0.
         self.dtau = 10  # decay tau
         self.rec = []
