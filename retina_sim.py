@@ -25,6 +25,7 @@ class NetworkModel(object):
         self.timers = np.zeros(3)
 
     def populate(self, pop=None, spacing=None, jitter=1):
+        start = timer.time()
         """
         Use pop to set a cell population number and uniformly distribute cells
         within the network window, or use spacing with jitter to place cells in
@@ -48,6 +49,7 @@ class NetworkModel(object):
                     self.cells.append(Cell(self.dims, self.dt, pos=pos))
         else:
             print("No cell density params given. Crashing...")
+        print("time to populate:", timer.time()-start)
 
     def newStim(self, type='bar', startPos=[0, 0], tOn=0, tOff=None,
                 vel=0, theta=0, orient=0, amp=1, change=0, width=10,
