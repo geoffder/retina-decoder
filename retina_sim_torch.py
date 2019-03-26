@@ -98,6 +98,7 @@ class NetworkModel(object):
             start = timer.time()
             for cell in self.cells:
                 cell.excite(stim.check(cell.rfMask))
+                # cell.excite(stim.check(cell.sparse_rfMask))
             self.timers[1] += timer.time() - start
         start = timer.time()
         for cell in self.cells:
@@ -242,7 +243,11 @@ class Stim(object):
             r2 = (x - cx)**2 + (y - cy)**2
             # circular mask
             self.mask = r2 <= self.radius**2
-        self.mask = torch.ByteTensor(self.mask*1).to(device)
+        self.mask = torch.ByteTensor(
+            self.mask*1).to(device).requires_grad_(False)
+        # self.mask = torch.from_numpy(
+        #     self.mask*1).int().to(device).requires_grad_(False)
+        # self.sparse_mask = self.mask.to_sparse().to(device)
 
     def check(self, rfMask):
         """
@@ -256,6 +261,7 @@ class Stim(object):
         # return np.count_nonzero(self.mask*rfMask) > 0
         with torch.no_grad():
             c = torch.nonzero(self.mask*rfMask).size(0) > 0
+            # c = (self.sparse_mask * rfMask)._nnz()
         return c
 
 
@@ -273,6 +279,8 @@ class Cell(object):
         self.somaMask = self.drawMask(diam//2)
         self.rf = rf  # receptive field radius
         self.rfMask = self.drawMask(rf)
+        # self.sparse_rfMask = self.rfMask.to_sparse(
+        #     ).to(device).requires_grad_(False)
         self.Vm = 0.
         self.dtau = 10  # decay tau
         self.rec = []
@@ -287,7 +295,9 @@ class Cell(object):
         r2 = (x - cx)**2 + (y - cy)**2
         # circular mask
         mask = r2 <= radius**2
-        return torch.ByteTensor(mask*1).to(device)
+        return torch.ByteTensor(mask*1).to(device).requires_grad_(False)
+        # return torch.from_numpy(mask*1).int().to(
+        #     device).requires_grad_(False)
 
     def decay(self):
         "Decay of activation that occurs with each timestep."
