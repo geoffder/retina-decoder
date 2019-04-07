@@ -147,8 +147,7 @@ class NetworkModel(object):
             r2 = (x - cx)**2 + (y - cy)**2
             r = (cell.diam/2)**2
             movie[r2 <= r, :] += np.concatenate(cell.recs, axis=0)
-
-        # build the plot
+        np.save('cell_movie', movie)
         fig, ax = plt.subplots(1)
         stack = StackPlotter(ax, movie, delta=15)
         fig.canvas.mpl_connect('scroll_event', stack.onscroll)
@@ -157,6 +156,7 @@ class NetworkModel(object):
     def plotStims(self):
         "Plot stimulus movies."
         movie = np.dstack(self.stimMovies)
+        np.save('stim_movie', movie)
         fig, ax = plt.subplots(1)
         stack = StackPlotter(ax, movie, delta=50)
         fig.canvas.mpl_connect('scroll_event', stack.onscroll)

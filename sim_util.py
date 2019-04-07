@@ -1,5 +1,7 @@
 import numpy as np
 # import matplotlib.pyplot as plt
+import h5py
+from PIL import Image
 
 '''
 Collection of utility classes and functions that are used by retina_sim, but
@@ -50,3 +52,19 @@ class StackPlotter(object):
         self.im.set_data(self.X[:, :, self.ind])
         self.ax.set_ylabel('t = %s' % self.ind)
         self.im.axes.figure.canvas.draw()
+
+
+def movie_giffer(file):
+    vid = np.load(file+'.npy')
+    vid = vid.transpose(2, 0, 1)
+    # normalize and save as gif
+    vid = (vid/vid.max()*255).astype(np.int8)
+    # vid = (vid*25.5).astype(np.int8)
+    frames = [
+        Image.fromarray(vid[i*10]) for i in range(int(vid.shape[0]/10))]
+    frames[0].save(file+'.gif', save_all=True, append_images=frames[1:],
+                   duration=40)
+
+
+if __name__ == '__main__':
+    movie_giffer('stim_movie')
