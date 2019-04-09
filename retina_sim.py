@@ -45,8 +45,8 @@ class NetworkModel(object):
                 for j in range(yspace.shape[0]):
                     theta = 2 * np.pi * np.random.random()
                     radius = np.random.randn()*jitter
-                    pos = [xspace[i] + radius * np.cos(np.deg2rad(theta)),
-                           yspace[j] + radius * np.sin(np.deg2rad(theta))]
+                    pos = [xspace[i] + radius * np.cos(theta),
+                           yspace[j] + radius * np.sin(theta)]
                     self.cells.append(Cell(self.dims, self.dt, pos=pos))
         else:
             print("No cell density params given. Crashing...")
