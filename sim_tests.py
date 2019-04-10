@@ -68,10 +68,10 @@ def dirRun():
     for d in dirs:
         print(d, end=' ')
         pos = [cx - cx*np.cos(np.deg2rad(d)), cy - cy*np.sin(np.deg2rad(d))]
-        model.newStim(type='circle', theta=d, radius=50, vel=1,
-                      startPos=pos)
-        # model.newStim(type='bar', theta=d, orient=-d, width=10, length=100,
-        #               vel=1, startPos=pos)
+        # model.newStim(type='circle', theta=d, radius=50, vel=1,
+        #               startPos=pos)
+        model.newStim(type='bar', theta=d, orient=-d, width=10, length=100,
+                      vel=1, startPos=pos)
         model.run()
         model.clearStims()
     print('')  # next line
