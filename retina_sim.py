@@ -225,17 +225,14 @@ class Stim(object):
 
     def drawMask(self):
         "Draw shape with which this stimulus interacts with cells."
+        x, y = np.ogrid[:self.netDims[0], :self.netDims[1]]
         if self.type == 'bar':
-            x, y = np.ogrid[:self.netDims[0], :self.netDims[1]]
-            # x, y = x.astype(np.float), y.astype(np.float)
             x, y = rotate(self.pos, x, y, np.radians(self.orient))
             self.mask = (
                 (np.abs(x-self.pos[0]) <= self.width)
                 * (np.abs(y-self.pos[1]) <= self.length)
             )
         elif self.type == 'circle':
-            x, y = np.ogrid[:self.netDims[0], :self.netDims[1]]
-            # x, y = x.astype(np.float), y.astype(np.float)
             cx, cy = self.pos  # centre coordniates
             # convert cartesian --> polar coordinates
             r2 = (x - cx)**2 + (y - cy)**2
