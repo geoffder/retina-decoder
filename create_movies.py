@@ -3,6 +3,7 @@ from PIL import Image
 
 import os
 import h5py as h5
+import sqlite3 as sql
 
 # import pandas as pd
 import json
@@ -88,6 +89,25 @@ def package_experiment(folder, exp_name):
     across all networks, thus stimulus recordings and movies are stored in a
     separate hdf5 (saving time and space).
     """
+    # connect to sql database
+    db = sql.connect(folder+exp_name+'_params.db')
+    cursor = db.cursor()
+    # create table for network parameters
+    cursor.execute(
+        '''
+        CREATE TABLE NET_PARAMS
+        (netstr Text, xdim real, ydim real, margin real, tstop real, dt real)
+        '''
+    )
+    # create table for cell parameters
+    cursor.execute(
+        '''
+        CREATE TABLE CELL_PARAMS
+        (netstr Text, type Text, diam real, rf_rad real, dtau real)
+        '''
+    )
+
+    # create hdf5 archive for network recordings
     net_pckg = h5.File(folder+exp_name+'_nets.h5', 'w')
     # get all entries in given folder that are directories
     net_names = [name for name in os.listdir(folder)
@@ -96,10 +116,22 @@ def package_experiment(folder, exp_name):
         netgrp = net_pckg.create_group(net)
         # (x, y) coordinates of all cells in network
         coords = np.loadtxt(folder+net+'/cellCoords.csv', delimiter=',')
+        # net parameters
+        netpars = json.loads(open(folder+net+'/netParams.txt').read())
+        cursor.execute(
+            'INSERT INTO ' + 'NET_PARAMS' + ' VALUES (?, ?, ?, ?, ?, ?)',
+            [net, netpars['xdim'], netpars['ydim'], netpars['margin'],
+             netpars['tstop'], netpars['dt']]
+        )
         # cell parameters
         params = [json.loads(line)
                   for line in open(folder+net+'/cellParams.txt').readlines()]
         diams = [cell['diam'] for cell in params]
+        for par in params:
+            cursor.execute(
+                'INSERT INTO ' + 'CELL_PARAMS' + ' VALUES (?, ?, ?, ?, ?)',
+                [net, par['type'], par['diam'], par['rf_rad'], par['dtau']]
+            )
         # somas with transparent RFs (just for display)
         net_view = np.loadtxt(folder+net+'/cellMat.csv', delimiter=',')
         # store in network group
@@ -114,9 +146,8 @@ def package_experiment(folder, exp_name):
         for stim in stim_names:
             stimgrp = netgrp.create_group(stim)
             pth = folder + '/' + net + '/' + stim + '/'
-            # TODO: get dims from a net param file
             cell_recs, cell_movie = build_cell_movie(
-                                        pth, [600, 600], coords, diams)
+                pth, [netpars['xdim'], netpars['ydim']], coords, diams)
             # store in hdf5
             stimgrp.create_dataset(
                 'recs', data=cell_recs, compression="gzip")
@@ -124,17 +155,38 @@ def package_experiment(folder, exp_name):
                 'movie', data=cell_movie, compression="gzip")
     net_pckg.close()
 
+    # create table for network parameters
+    cursor.execute(
+        '''
+        CREATE TABLE STIM_PARAMS
+        (stimstr Text, type Text, radius real, width real, length real)
+        '''
+    )
     # Store stimulus recordings and movies, use last net folder and stim_names
     stim_pckg = h5.File(folder+exp_name+'_stims.h5', 'w')
     for stim in stim_names:
         pth = folder + '/' + net + '/' + stim + '/'
+        # consolidate stimulus parameters into SQL table
+        fnames = [name for name in os.listdir(pth)
+                  if os.path.isfile(pth+name) and 'stimParams' in name]
+        for f in fnames:
+            p = json.loads(open(pth+f).read())
+            cursor.execute(
+                    'INSERT INTO ' + 'STIM_PARAMS' + ' VALUES (?, ?, ?, ?, ?)',
+                    [stim, p['type'], p['radius'], p['width'], p['length']]
+                )
+        # create and store stimulus movies
         stimgrp = stim_pckg.create_group(stim)
-        stim_recs, stim_movie = build_stim_movie(pth, [600, 600])
+        stim_recs, stim_movie = build_stim_movie(
+            pth, [netpars['xdim'], netpars['ydim']])
         stimgrp.create_dataset(
             'recs', data=stim_recs, compression="gzip")
         stimgrp.create_dataset(
             'movie', data=stim_movie, compression="gzip")
     stim_pckg.close()
+
+    db.commit()
+    db.close()
 
 
 def single_movie_giffer(file):
