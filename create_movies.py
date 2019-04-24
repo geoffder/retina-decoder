@@ -189,22 +189,22 @@ def package_experiment(folder, exp_name):
     db.close()
 
 
-def single_movie_giffer(file):
-    h5f = h5.File(file+'.h5', 'r')
-    vid = h5f['dataset_1'][:]
-    vid = vid.transpose(2, 0, 1)
+def movie_giffer(fname, matrix):
+    """
+    Takes desired filename (without '.gif') and a numpy matrix
+    (in H x W x Frames organization right now) and saves it as a GIF using
+    the PIL.Image module.
+    """
+    vid = matrix.transpose(2, 0, 1)
     # normalize and save as gif
     vid = (vid/vid.max()*255).astype(np.uint8)
     frames = [
         Image.fromarray(vid[i*10]) for i in range(int(vid.shape[0]/10))]
-    frames[0].save(file+'.gif', save_all=True, append_images=frames[1:],
+    frames[0].save(fname+'.gif', save_all=True, append_images=frames[1:],
                    duration=40, loop=0)
 
 
 if __name__ == '__main__':
     datapath = 'D:/retina-sim-data/'
-
-    # single_cell_movie(datapath, 'net0/', 'bar0/', [600, 600])
-    # single_movie_giffer(datapath+'net0/bar0/cell_movie')
 
     package_experiment(datapath, 'testExperiment')
