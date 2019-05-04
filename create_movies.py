@@ -70,8 +70,8 @@ def build_stim_movie(folder, dims):
                 xrot, yrot = rotate((xpos, ypos), x, y, np.radians(orient))
                 # rectangular mask
                 movie[:, :, t] += (
-                    (np.abs(x-xpos) <= param['width'])
-                    * (np.abs(y-ypos) <= param['length'])
+                    (np.abs(xrot-xpos) <= param['width']/2)
+                    * (np.abs(yrot-ypos) <= param['length']/2)
                 ) * amp
             elif param['type'] == 'circle':
                 # convert cartesian --> polar coordinates
@@ -111,7 +111,7 @@ def package_experiment(folder, exp_name):
     net_pckg = h5.File(folder+exp_name+'_nets.h5', 'w')
     # get all entries in given folder that are directories
     net_names = [name for name in os.listdir(folder)
-                 if os.path.isdir(folder+name)]
+                 if os.path.isdir(folder+name) and 'net' in name]
     for net in net_names:
         netgrp = net_pckg.create_group(net)
         # (x, y) coordinates of all cells in network
@@ -204,7 +204,26 @@ def movie_giffer(fname, matrix):
                    duration=40, loop=0)
 
 
+def test_gifs():
+    stim_names = ['bar%i' % d for d in [0, 45, 90, 135, 180, 225, 270, 315]]
+    # stim_names = ['bar%i' % d for d in [0, 45, 90, 135, 180]]
+
+    # extract and gif the network movies
+    net_pckg = h5.File(datapath+'testExperiment_nets.h5', 'r')
+    nets = [net_pckg['net0'][name]['movie'][:] for name in stim_names]
+    for name, net in zip(stim_names, nets):
+        movie_giffer(datapath+'net_'+name, net)
+    del net_pckg, nets  # free up the memory
+
+    # extract and gif the stim movies
+    stim_pckg = h5.File(datapath+'testExperiment_stims.h5', 'r')
+    stims = [stim_pckg[name]['movie'][:] for name in stim_names]
+    for name, stim in zip(stim_names, stims):
+        movie_giffer(datapath+'stim_'+name, stim)
+
+
 if __name__ == '__main__':
     datapath = 'D:/retina-sim-data/'
 
     package_experiment(datapath, 'testExperiment')
+    test_gifs()
