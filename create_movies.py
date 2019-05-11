@@ -10,6 +10,32 @@ import json
 from sim_util import rotate
 
 
+class ProgressBar(object):
+    def __init__(self, steps, size=50):
+        self.steps = steps
+        self.size = size if steps > size else steps
+        self.tick = np.floor(steps/self.size)
+        self.prog = 0
+        self.update()
+
+    def step(self):
+        self.prog += 1
+        if self.prog % self.tick == 0:
+            self.update()
+        self.check()
+
+    def update(self):
+        ticks = int(np.floor(self.prog/self.tick))
+        print(
+            '[' + '='*ticks + ' '*(self.size-ticks) + ']',
+            end='\r', flush=True
+        )
+
+    def check(self):
+        if self.prog == self.steps:
+            print('')  # new-line
+
+
 def single_cell_movie(basepath, netdir, recdir, dims):
     # cell locations, shapes, and recordings
     coords = np.loadtxt(basepath+netdir+'cellCoords.csv', delimiter=',')
@@ -143,6 +169,8 @@ def package_experiment(folder, exp_name):
         # now move through all stimuli shown to this network
         stim_names = [name for name in os.listdir(folder+net)
                       if os.path.isdir(folder+net+'/'+name)]
+        print('Packaging movies for %s...' % net)
+        progress = ProgressBar(len(stim_names))
         for stim in stim_names:
             stimgrp = netgrp.create_group(stim)
             pth = folder + '/' + net + '/' + stim + '/'
@@ -153,6 +181,7 @@ def package_experiment(folder, exp_name):
                 'recs', data=cell_recs, compression="gzip")
             stimgrp.create_dataset(
                 'movie', data=cell_movie, compression="gzip")
+            progress.step()
     net_pckg.close()
 
     # create table for network parameters
@@ -164,6 +193,8 @@ def package_experiment(folder, exp_name):
     )
     # Store stimulus recordings and movies, use last net folder and stim_names
     stim_pckg = h5.File(folder+exp_name+'_stims.h5', 'w')
+    print('Packaging movies for stimuli...')
+    progress = ProgressBar(len(stim_names))
     for stim in stim_names:
         pth = folder + '/' + net + '/' + stim + '/'
         # consolidate stimulus parameters into SQL table
@@ -183,6 +214,7 @@ def package_experiment(folder, exp_name):
             'recs', data=stim_recs, compression="gzip")
         stimgrp.create_dataset(
             'movie', data=stim_movie, compression="gzip")
+        progress.step()
     stim_pckg.close()
 
     db.commit()
@@ -211,15 +243,22 @@ def test_gifs():
     # extract and gif the network movies
     net_pckg = h5.File(datapath+'testExperiment_nets.h5', 'r')
     nets = [net_pckg['net0'][name]['movie'][:] for name in stim_names]
+
+    print('Giffing network movies...')
+    progress = ProgressBar(len(nets))
     for name, net in zip(stim_names, nets):
         movie_giffer(datapath+'net_'+name, net)
+        progress.step()
     del net_pckg, nets  # free up the memory
 
     # extract and gif the stim movies
     stim_pckg = h5.File(datapath+'testExperiment_stims.h5', 'r')
     stims = [stim_pckg[name]['movie'][:] for name in stim_names]
+    print('Giffing stimuli movies...')
+    progress = ProgressBar(len(stims))
     for name, stim in zip(stim_names, stims):
         movie_giffer(datapath+'stim_'+name, stim)
+        progress.step()
 
 
 if __name__ == '__main__':
