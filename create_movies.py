@@ -153,10 +153,12 @@ def package_experiment(folder, exp_name):
         params = [json.loads(line)
                   for line in open(folder+net+'/cellParams.txt').readlines()]
         diams = [cell['diam'] for cell in params]
+        # TODO: Fix this to work with OSGCs
         for par in params:
             cursor.execute(
                 'INSERT INTO ' + 'CELL_PARAMS' + ' VALUES (?, ?, ?, ?, ?)',
-                [net, par['type'], par['diam'], par['rf_rad'], par['dtau']]
+                [net, par['type'], par['diam'],
+                    par.get('rf_rad', 0), par['dtau']]
             )
         # somas with transparent RFs (just for display)
         net_view = np.loadtxt(folder+net+'/cellMat.csv', delimiter=',')
@@ -221,7 +223,7 @@ def package_experiment(folder, exp_name):
     db.close()
 
 
-def movie_giffer(fname, matrix):
+def movie_giffer(fname, matrix, downsample=1):
     """
     Takes desired filename (without '.gif') and a numpy matrix
     (in H x W x Frames organization right now) and saves it as a GIF using
@@ -231,9 +233,11 @@ def movie_giffer(fname, matrix):
     # normalize and save as gif
     vid = (vid/vid.max()*255).astype(np.uint8)
     frames = [
-        Image.fromarray(vid[i*10]) for i in range(int(vid.shape[0]/10))]
+        Image.fromarray(vid[i*downsample], mode='P')
+        for i in range(int(vid.shape[0]/downsample))
+    ]
     frames[0].save(fname+'.gif', save_all=True, append_images=frames[1:],
-                   duration=40, loop=0)
+                   duration=40, loop=0, optimize=True)
 
 
 def test_gifs():
@@ -264,5 +268,5 @@ def test_gifs():
 if __name__ == '__main__':
     datapath = 'D:/retina-sim-data/'
 
-    package_experiment(datapath, 'testExperiment')
+    # package_experiment(datapath, 'testExperiment')
     test_gifs()
