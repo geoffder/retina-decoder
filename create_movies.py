@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.signal import resample
 from PIL import Image
 
 import os
@@ -54,21 +55,22 @@ def single_cell_movie(basepath, netdir, recdir, dims):
     h5f.create_dataset('dataset_1', data=movie, compression="gzip")
 
 
-def build_cell_movie(folder, dims, coords, diams):
+def build_cell_movie(folder, dims, coords, diams, downsample):
     recs = np.loadtxt(folder+'cellRecs.csv', delimiter=',')
 
-    movie = np.zeros((*dims, recs.shape[0]))
+    length = recs.shape[0] // downsample
+    movie = np.zeros((*dims, length))
     x, y = np.ogrid[:dims[0], :dims[1]]
     for i in range(coords.shape[0]):
         cx, cy = coords[i, :]
         r2 = (x - cx)**2 + (y - cy)**2
         r = (diams[i]/2)**2
-        movie[r2 <= r, :] += recs[:, i]
+        movie[r2 <= r, :] += resample(recs[:, i], length)
 
     return recs, movie
 
 
-def build_stim_movie(folder, dims):
+def build_stim_movie(folder, dims, downsample):
     """
     Take all stimulus recordings and parameters and build a single movie for
     this trial.
@@ -86,11 +88,13 @@ def build_stim_movie(folder, dims):
     params = [json.loads(open(folder+'stimParams%d.txt' % i).read())
               for i in range(numStims)]
 
-    movie = np.zeros((*dims, recs[0].shape[0]))
+    length = recs[0].shape[0] // downsample
+    movie = np.zeros((*dims, length))
     x, y = np.ogrid[:dims[0], :dims[1]]
     for rec, param in zip(recs, params):
-        for t in range(rec.shape[0]):
-            xpos, ypos, amp, orient = rec[t, :]
+        down_rec = resample(rec, length)
+        for t in range(length):
+            xpos, ypos, amp, orient = down_rec[t, :]
             if param['type'] == 'bar':
                 # rotate to match orientation of bar
                 xrot, yrot = rotate((xpos, ypos), x, y, np.radians(orient))
@@ -108,7 +112,7 @@ def build_stim_movie(folder, dims):
     return recs, movie
 
 
-def package_experiment(folder, exp_name):
+def package_experiment(folder, exp_name, downsample=1):
     """
     Consolidate recordings of cells and stimulus positions (and generated
     movies) in to hdf5 files. For each experiment, the stimuli are the same
@@ -177,7 +181,9 @@ def package_experiment(folder, exp_name):
             stimgrp = netgrp.create_group(stim)
             pth = folder + '/' + net + '/' + stim + '/'
             cell_recs, cell_movie = build_cell_movie(
-                pth, [netpars['xdim'], netpars['ydim']], coords, diams)
+                pth, [netpars['xdim'], netpars['ydim']], coords, diams,
+                downsample
+            )
             # store in hdf5
             stimgrp.create_dataset(
                 'recs', data=cell_recs, compression="gzip")
@@ -211,7 +217,8 @@ def package_experiment(folder, exp_name):
         # create and store stimulus movies
         stimgrp = stim_pckg.create_group(stim)
         stim_recs, stim_movie = build_stim_movie(
-            pth, [netpars['xdim'], netpars['ydim']])
+            pth, [netpars['xdim'], netpars['ydim']], downsample
+        )
         stimgrp.create_dataset(
             'recs', data=stim_recs, compression="gzip")
         stimgrp.create_dataset(
@@ -236,8 +243,8 @@ def movie_giffer(fname, matrix, downsample=1):
         Image.fromarray(vid[i*downsample], mode='P')
         for i in range(int(vid.shape[0]/downsample))
     ]
-    frames[0].save(fname+'.gif', save_all=True, append_images=frames[1:],
-                   duration=40, loop=0, optimize=True)
+    frames[0].save(fname+'.tif', save_all=True, append_images=frames[1:],
+                   duration=40, loop=0, optimize=False)
 
 
 def test_gifs():
@@ -268,5 +275,5 @@ def test_gifs():
 if __name__ == '__main__':
     datapath = 'D:/retina-sim-data/'
 
-    # package_experiment(datapath, 'testExperiment')
+    package_experiment(datapath, 'testExperiment', downsample=10)
     test_gifs()
