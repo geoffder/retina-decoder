@@ -92,7 +92,7 @@ def build_stim_movie(folder, dims, downsample):
     movie = np.zeros((*dims, length))
     x, y = np.ogrid[:dims[0], :dims[1]]
     for rec, param in zip(recs, params):
-        down_rec = resample(rec, length)
+        down_rec = resample(rec, length)  # TODO: DON'T THINK RESAMPLE WORKS FOR THIS!!
         for t in range(length):
             xpos, ypos, amp, orient = down_rec[t, :]
             if param['type'] == 'bar':
