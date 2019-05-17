@@ -133,7 +133,10 @@ def package_experiment(folder, exp_name, downsample=1):
     cursor.execute(
         '''
         CREATE TABLE CELL_PARAMS
-        (netstr Text, type Text, diam real, rf_rad real, dtau real)
+        (
+            netstr Text, type Text, diam real, rf_rad real, rf_ax0, rf_ax1,
+            dtau real
+        )
         '''
     )
 
@@ -157,12 +160,13 @@ def package_experiment(folder, exp_name, downsample=1):
         params = [json.loads(line)
                   for line in open(folder+net+'/cellParams.txt').readlines()]
         diams = [cell['diam'] for cell in params]
-        # TODO: Fix this to work with OSGCs
         for par in params:
             cursor.execute(
-                'INSERT INTO ' + 'CELL_PARAMS' + ' VALUES (?, ?, ?, ?, ?)',
-                [net, par['type'], par['diam'],
-                    par.get('rf_rad', 0), par['dtau']]
+                'INSERT INTO '+'CELL_PARAMS'+' VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [
+                    net, par['type'], par['diam'], par.get('rf_rad', 0),
+                    par.get('rf_ax0', 0),  par.get('rf_ax1', 0), par['dtau']
+                ]
             )
         # somas with transparent RFs (just for display)
         net_view = np.loadtxt(folder+net+'/cellMat.csv', delimiter=',')
@@ -230,7 +234,7 @@ def package_experiment(folder, exp_name, downsample=1):
     db.close()
 
 
-def movie_giffer(fname, matrix, downsample=1):
+def movie_giffer(fname, matrix, max_val=None, downsample=1):
     """
     Takes desired filename (without '.gif') and a numpy matrix
     (in H x W x Frames organization right now) and saves it as a GIF using
@@ -238,7 +242,10 @@ def movie_giffer(fname, matrix, downsample=1):
     """
     vid = matrix.transpose(2, 0, 1)
     # normalize and save as gif
-    vid = (vid/vid.max()*255).astype(np.uint8)
+    if max_val is None:
+        vid = (vid/vid.max()*255).clip(0, 255).astype(np.uint8)
+    else:
+        vid = (vid/max_val*255).clip(0, 255).astype(np.uint8)
     frames = [
         Image.fromarray(vid[i*downsample], mode='P')
         for i in range(int(vid.shape[0]/downsample))
@@ -256,9 +263,10 @@ def test_gifs():
     nets = [net_pckg['net0'][name]['movie'][:] for name in stim_names]
 
     print('Giffing network movies...')
+    max_val = np.max([net.max() for net in nets])  # for normalization
     progress = ProgressBar(len(nets))
     for name, net in zip(stim_names, nets):
-        movie_giffer(datapath+'net_'+name, net)
+        movie_giffer(datapath+'net_'+name, net, max_val)
         progress.step()
     del net_pckg, nets  # free up the memory
 
