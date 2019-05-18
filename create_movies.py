@@ -89,10 +89,14 @@ def build_stim_movie(folder, dims, downsample):
               for i in range(numStims)]
 
     length = recs[0].shape[0] // downsample
+    idx = np.arange(0, recs[0].shape[0], downsample)  # for downsampling slice
     movie = np.zeros((*dims, length))
     x, y = np.ogrid[:dims[0], :dims[1]]
     for rec, param in zip(recs, params):
-        down_rec = resample(rec, length)  # TODO: DON'T THINK RESAMPLE WORKS FOR THIS!!
+        # scipy resample was not working corectly for this coordinate data
+        # try to figure out why and maybe swtich back. Important for stim
+        # and cell recordings to match.
+        down_rec = rec[idx]  # simple slice downsampling
         for t in range(length):
             xpos, ypos, amp, orient = down_rec[t, :]
             if param['type'] == 'bar':
