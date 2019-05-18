@@ -61,8 +61,8 @@ def testRun():
 def dirRun():
     model = NetworkModel(tstop=600)
     model.populate(spacing=40, jitter=10)
-    # dirs = [0, 45, 90, 135, 180, 225, 270, 315]
-    dirs = [0]
+    dirs = [0, 45, 90, 135, 180, 225, 270, 315]
+    # dirs = [135]
     cx, cy = model.origin
     print("Running... \ndirs: ", end='')
     for d in dirs:
@@ -70,7 +70,7 @@ def dirRun():
         pos = [cx - cx*np.cos(np.deg2rad(d)), cy - cy*np.sin(np.deg2rad(d))]
         # model.newStim(type='circle', theta=d, radius=50, vel=1,
         #               startPos=pos)
-        model.newStim(type='bar', theta=d, orient=-d, width=10, length=100,
+        model.newStim(type='bar', theta=d, orient=-d, width=20, length=100,
                       vel=1, startPos=pos)
         model.run()
         model.clearStims()

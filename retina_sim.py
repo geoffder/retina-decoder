@@ -1,5 +1,5 @@
 import numpy as np
-# from scipy import sparse
+from scipy import sparse
 import matplotlib.pyplot as plt
 from sim_util import rotate, StackPlotter
 import time as timer
@@ -94,8 +94,8 @@ class NetworkModel(object):
             self.timers[0] += timer.time() - start
             start = timer.time()
             for cell in self.cells:
-                cell.excite(stim.check(cell.rfMask))
-                # cell.excite(stim.check(cell.rfMask_sparse))
+                # cell.excite(stim.check(cell.rfMask))
+                cell.excite(stim.check(cell.rfMask_sparse))
             self.timers[1] += timer.time() - start
         start = timer.time()
         for cell in self.cells:
@@ -214,28 +214,30 @@ class Stim(object):
         self.length = length
         # circle
         self.radius = radius
+        # grid vectors
+        self.xvec, self.yvec = np.ogrid[:self.netDims[0], :self.netDims[1]]
 
     def move(self):
         "Move the centre position of this stim as a function of its velocity."
         self.pos[0] += self.vel/self.dt * np.cos(np.deg2rad(self.theta))
         self.pos[1] += self.vel/self.dt * np.sin(np.deg2rad(self.theta))
         self.drawMask()
-        # self.mask_sparse = sparse.csc_matrix(self.mask)
+        self.mask_sparse = sparse.csc_matrix(self.mask)
         self.rec.append(self.mask)
 
     def drawMask(self):
         "Draw shape with which this stimulus interacts with cells."
-        x, y = np.ogrid[:self.netDims[0], :self.netDims[1]]
         if self.type == 'bar':
-            x, y = rotate(self.pos, x, y, np.radians(self.orient))
+            x, y = rotate(
+                self.pos, self.xvec, self.yvec, np.radians(self.orient))
             self.mask = (
-                (np.abs(x-self.pos[0]) <= self.width)
-                * (np.abs(y-self.pos[1]) <= self.length)
+                (np.abs(x-self.pos[0]) <= self.width/2)
+                * (np.abs(y-self.pos[1]) <= self.length/2)
             )
         elif self.type == 'circle':
             cx, cy = self.pos  # centre coordniates
             # convert cartesian --> polar coordinates
-            r2 = (x - cx)**2 + (y - cy)**2
+            r2 = (self.xvec - cx)**2 + (self.yvec - cy)**2
             # circular mask
             self.mask = r2 <= self.radius**2
 
@@ -248,8 +250,8 @@ class Stim(object):
         non-boolean (e.g. gradients like sine gratings).
         """
         # return np.sum(self.mask*rfMask) > 0  # return if stim is in RF at all
-        return np.count_nonzero(self.mask*rfMask) > 0
-        # return self.mask_sparse.multiply(rfMask).count_nonzero()
+        # return np.count_nonzero(self.mask*rfMask) > 0
+        return self.mask_sparse.multiply(rfMask).count_nonzero()
 
 
 class Cell(object):
@@ -266,7 +268,7 @@ class Cell(object):
         self.somaMask = self.drawMask(diam//2)
         self.rf = rf  # receptive field radius
         self.rfMask = self.drawMask(rf)
-        # self.rfMask_sparse = sparse.csc_matrix(self.rfMask)
+        self.rfMask_sparse = sparse.csc_matrix(self.rfMask)
         self.Vm = 0.
         self.dtau = 10  # decay tau
         self.rec = []
