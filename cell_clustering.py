@@ -150,6 +150,13 @@ if __name__ == '__main__':
         X_embed2d[:, 0], X_embed2d[:, 1], c=type_inds, alpha=.5, s=100,
         cmap='jet'
     )
+    # arbitrarily place text label on first instance of each type in dataset
+    for ind in range(len(ind2type)):
+        row = np.where(type_inds == ind)[0][0]  # take the first one
+        ax2[0].scatter(
+            X_embed2d[row, 0], X_embed2d[row, 1], alpha=.5, s=6000, c='c',
+            marker='$%s$' % ind2type[ind]
+        )
     ax2[0].set_title('TSNE 2D Embedding with Cell Type labels')
     ax2[0].set_xlabel('dimension 1')
     ax2[0].set_ylabel('dimension 2')
