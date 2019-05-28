@@ -55,22 +55,42 @@ def single_cell_movie(basepath, netdir, recdir, dims):
     h5f.create_dataset('dataset_1', data=movie, compression="gzip")
 
 
-def build_cell_movie(folder, dims, coords, diams, downsample):
-    recs = np.loadtxt(folder+'cellRecs.csv', delimiter=',')
+def get_masks(dims, coords, diams, space_redux):
+    # spatial downsampling
+    dims = np.array(dims) // space_redux  # must be int for shape
+    coords, diams = (coords / space_redux, np.array(diams) / space_redux)
 
-    length = recs.shape[0] // downsample
-    movie = np.zeros((*dims, length))
+    # stack of masks, shape:(NxHxW)
+    masks = np.zeros((coords.shape[0], *dims))
     x, y = np.ogrid[:dims[0], :dims[1]]
     for i in range(coords.shape[0]):
         cx, cy = coords[i, :]
         r2 = (x - cx)**2 + (y - cy)**2
         r = (diams[i]/2)**2
-        movie[r2 <= r, :] += resample(recs[:, i], length)
+        masks[i, r2 <= r] = 1
+
+    return masks
+
+
+def build_cell_movie(folder, dims, coords, diams, downsample, space_redux):
+    recs = np.loadtxt(folder+'cellRecs.csv', delimiter=',')
+
+    # temporal and spatial downsampling
+    duration = recs.shape[0] // downsample
+    dims = np.array(dims) // space_redux  # must be int for shape
+    coords, diams = (coords / space_redux, np.array(diams) / space_redux)
+    movie = np.zeros((*dims, duration))
+    x, y = np.ogrid[:dims[0], :dims[1]]
+    for i in range(coords.shape[0]):
+        cx, cy = coords[i, :]
+        r2 = (x - cx)**2 + (y - cy)**2
+        r = (diams[i]/2)**2
+        movie[r2 <= r, :] += resample(recs[:, i], duration)
 
     return recs, movie
 
 
-def build_stim_movie(folder, dims, downsample):
+def build_stim_movie(folder, dims, downsample, space_redux):
     """
     Take all stimulus recordings and parameters and build a single movie for
     this trial.
@@ -88,35 +108,39 @@ def build_stim_movie(folder, dims, downsample):
     params = [json.loads(open(folder+'stimParams%d.txt' % i).read())
               for i in range(numStims)]
 
-    length = recs[0].shape[0] // downsample
+    # temporal and spatial downsampling
+    duration = recs[0].shape[0] // downsample
     idx = np.arange(0, recs[0].shape[0], downsample)  # for downsampling slice
-    movie = np.zeros((*dims, length))
+    dims = np.array(dims) // space_redux
+
+    movie = np.zeros((*dims, duration))
     x, y = np.ogrid[:dims[0], :dims[1]]
     for rec, param in zip(recs, params):
         # scipy resample was not working corectly for this coordinate data
         # try to figure out why and maybe swtich back. Important for stim
         # and cell recordings to match.
         down_rec = rec[idx]  # simple slice downsampling
-        for t in range(length):
+        for t in range(duration):
             xpos, ypos, amp, orient = down_rec[t, :]
+            xpos, ypos = (xpos / space_redux, ypos / space_redux)
             if param['type'] == 'bar':
                 # rotate to match orientation of bar
                 xrot, yrot = rotate((xpos, ypos), x, y, np.radians(orient))
                 # rectangular mask
                 movie[:, :, t] += (
-                    (np.abs(xrot-xpos) <= param['width']/2)
-                    * (np.abs(yrot-ypos) <= param['length']/2)
+                    (np.abs(xrot-xpos) <= param['width']/2/space_redux)
+                    * (np.abs(yrot-ypos) <= param['length']/2/space_redux)
                 ) * amp
             elif param['type'] == 'circle':
                 # convert cartesian --> polar coordinates
                 r2 = (x - xpos)**2 + (y - ypos)**2
                 # circular mask
-                movie[:, :, t] += (r2 <= param['radius']**2) * amp
+                movie[:, :, t] += (r2 <= (param['radius']/space_redux)**2)*amp
 
     return recs, movie
 
 
-def package_experiment(folder, exp_name, downsample=1):
+def package_experiment(folder, exp_name, downsample=1, space_redux=1):
     """
     Consolidate recordings of cells and stimulus positions (and generated
     movies) in to hdf5 files. For each experiment, the stimuli are the same
@@ -174,9 +198,15 @@ def package_experiment(folder, exp_name, downsample=1):
             )
         # somas with transparent RFs (just for display)
         net_view = np.loadtxt(folder+net+'/cellMat.csv', delimiter=',')
+        # soma masks of each cell, shape:(NxHxW)
+        soma_masks = get_masks(
+            [netpars['xdim'], netpars['ydim']], coords, diams, space_redux
+        )
         # store in network group
         netgrp.create_dataset(
             'cell_coords', data=coords, compression='gzip')
+        netgrp.create_dataset(
+            'cell_masks', data=soma_masks, compression='gzip')
         netgrp.create_dataset(
             'net_view', data=net_view, compression='gzip')
 
@@ -190,7 +220,7 @@ def package_experiment(folder, exp_name, downsample=1):
             pth = folder + '/' + net + '/' + stim + '/'
             cell_recs, cell_movie = build_cell_movie(
                 pth, [netpars['xdim'], netpars['ydim']], coords, diams,
-                downsample
+                downsample, space_redux
             )
             # store in hdf5
             stimgrp.create_dataset(
@@ -225,7 +255,7 @@ def package_experiment(folder, exp_name, downsample=1):
         # create and store stimulus movies
         stimgrp = stim_pckg.create_group(stim)
         stim_recs, stim_movie = build_stim_movie(
-            pth, [netpars['xdim'], netpars['ydim']], downsample
+            pth, [netpars['xdim'], netpars['ydim']], downsample, space_redux
         )
         stimgrp.create_dataset(
             'recs', data=stim_recs, compression="gzip")
@@ -258,8 +288,8 @@ def movie_giffer(fname, matrix, max_val=None, downsample=1):
                    duration=40, loop=0, optimize=False)
 
 
-def test_gifs():
-    stim_names = ['bar%i' % d for d in [0, 45, 90, 135, 180, 225, 270, 315]]
+def test_gifs(stim):
+    stim_names = [stim+'%i' % d for d in [0, 45, 90, 135, 180, 225, 270, 315]]
     # stim_names = ['bar%i' % d for d in [0, 45, 90, 135, 180]]
 
     # extract and gif the network movies
@@ -287,5 +317,7 @@ def test_gifs():
 if __name__ == '__main__':
     datapath = 'D:/retina-sim-data/'
 
-    package_experiment(datapath, 'testExperiment', downsample=10)
-    test_gifs()
+    package_experiment(
+        datapath, 'testExperiment', downsample=10, space_redux=2
+    )
+    # test_gifs('med_light_bar')
