@@ -1,11 +1,20 @@
+import numpy as np
+
 import torch
 from torch import nn
 import torch.nn.functional as F
 
 
+def init_filter(shape):
+    "Initialize a conv2d filter. Shape (out_channels, in_channels, H, W)."
+    W = torch.randn(*shape).float() / np.sqrt(2.0 / np.prod(shape[:-1]))
+    return nn.Parameter(W)
+
+
 class ConvGRUCell(nn.Module):
 
-    def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels):
+    def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
+                 learn_initial=True):
         super(ConvGRUCell, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -14,27 +23,29 @@ class ConvGRUCell(nn.Module):
         self.out_channels = out_channels  # number hidden feature maps
         self.in_shape = (out_channels, in_channels, *in_kernel)
         self.out_shape = (out_channels, out_channels, *out_kernel)
-        self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)
-        self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)
+        self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)  # conv padding
+        self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)  # conv padding
+        self.learn_initial = learn_initial  # trainable initial state
         self.build()
 
     def build(self):
         # input weight (transforms X before entering the hidden recurrence)
-        self.Wxh = nn.Parameter(torch.randn(*self.in_shape).float())
+        self.Wxh = init_filter(self.in_shape)
         # hidden weight and bias
-        self.Whh = nn.Parameter(torch.randn(*self.out_shape).float())
+        self.Whh = init_filter(self.out_shape)
         self.bh = nn.Parameter(torch.zeros(self.out_channels).float())
         # update gate weights
-        self.Wxz = nn.Parameter(torch.randn(*self.in_shape).float())
-        self.Whz = nn.Parameter(torch.randn(*self.out_shape).float())
+        self.Wxz = init_filter(self.in_shape)
+        self.Whz = init_filter(self.out_shape)
         self.bz = nn.Parameter(torch.zeros(self.out_channels).float())
         # reset gate weights
-        self.Wxr = nn.Parameter(torch.randn(*self.in_shape).float())
-        self.Whr = nn.Parameter(torch.randn(*self.out_shape).float())
+        self.Wxr = init_filter(self.in_shape)
+        self.Whr = init_filter(self.out_shape)
         self.br = nn.Parameter(torch.zeros(self.out_channels).float())
         # initial hidden repesentation
         self.h0 = nn.Parameter(
-            torch.randn(self.out_channels, *self.dims).float()
+            torch.zeros(self.out_channels, *self.dims).float(),
+            requires_grad=self.learn_initial
         )
 
     def forward(self, X):
@@ -48,20 +59,20 @@ class ConvGRUCell(nn.Module):
         hidden = self.h0.repeat(X.shape[1], 1, 1, 1)
         for frame in X:
             # calculate gates
-            reset = torch.sigmoid(
+            reset_gate = torch.sigmoid(
                 F.conv2d(frame, self.Wxr, bias=self.br, padding=self.in_pad)
                 + F.conv2d(hidden, self.Whr, padding=self.out_pad)
             )
-            update = torch.sigmoid(
+            update_gate = torch.sigmoid(
                 F.conv2d(frame, self.Wxz, bias=self.bz, padding=self.in_pad)
                 + F.conv2d(hidden, self.Whz, padding=self.out_pad)
             )
             # update hidden representation
             h_hat = F.relu(
                 F.conv2d(frame, self.Wxh, bias=self.bh, padding=self.in_pad)
-                + F.conv2d(reset*hidden, self.Whh, padding=self.out_pad)
+                + F.conv2d(reset_gate*hidden, self.Whh, padding=self.out_pad)
             )
-            hidden = h_hat*update + hidden*(1-update)
+            hidden = h_hat*update_gate + hidden*(1 - update_gate)
             # add hidden state to output sequence
             out.append(hidden)
 
@@ -70,7 +81,8 @@ class ConvGRUCell(nn.Module):
 
 class ConvLSTMCell(nn.Module):
 
-    def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels):
+    def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
+                 learn_initial=True):
         super(ConvLSTMCell, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -79,36 +91,39 @@ class ConvLSTMCell(nn.Module):
         self.out_channels = out_channels  # number hidden feature maps
         self.in_shape = (out_channels, in_channels, *in_kernel)
         self.out_shape = (out_channels, out_channels, *out_kernel)
-        self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)
-        self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)
+        self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)  # conv padding
+        self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)  # conv padding
+        self.learn_initial = learn_initial  # trainable initial state
         self.build()
 
     def build(self):
         # input gate weights (and bias)
-        self.Wxi = nn.Parameter(torch.randn(*self.in_shape).float())
-        self.Whi = nn.Parameter(torch.randn(*self.out_shape).float())
-        self.Wci = nn.Parameter(torch.randn(*self.out_shape).float())
+        self.Wxi = init_filter(self.in_shape)
+        self.Whi = init_filter(self.out_shape)
+        self.Wci = init_filter(self.out_shape)
         self.bi = nn.Parameter(torch.zeros(self.out_channels).float())
         # forget gate weights (and bias)
-        self.Wxf = nn.Parameter(torch.randn(*self.in_shape).float())
-        self.Whf = nn.Parameter(torch.randn(*self.out_shape).float())
-        self.Wcf = nn.Parameter(torch.randn(*self.out_shape).float())
+        self.Wxf = init_filter(self.in_shape)
+        self.Whf = init_filter(self.out_shape)
+        self.Wcf = init_filter(self.out_shape)
         self.bf = nn.Parameter(torch.zeros(self.out_channels).float())
         # memory cell weights (and bias)
-        self.Wxc = nn.Parameter(torch.randn(*self.in_shape).float())
-        self.Whc = nn.Parameter(torch.randn(*self.out_shape).float())
+        self.Wxc = init_filter(self.in_shape)
+        self.Whc = init_filter(self.out_shape)
         self.bc = nn.Parameter(torch.zeros(self.out_channels))
         # output gate weights (and bias)
-        self.Wxo = nn.Parameter(torch.randn(*self.in_shape).float())
-        self.Who = nn.Parameter(torch.randn(*self.out_shape).float())
-        self.Wco = nn.Parameter(torch.randn(*self.out_shape).float())
+        self.Wxo = init_filter(self.in_shape)
+        self.Who = init_filter(self.out_shape)
+        self.Wco = init_filter(self.out_shape)
         self.bo = nn.Parameter(torch.zeros(self.out_channels).float())
         # initial memory cell and hidden repesentation
         self.h0 = nn.Parameter(
-            torch.randn(self.out_channels, *self.dims).float()
+            torch.zeros(self.out_channels, *self.dims).float(),
+            requires_grad=self.learn_initial
         )
         self.c0 = nn.Parameter(
-            torch.randn(self.out_channels, *self.dims).float()
+            torch.zeros(self.out_channels, *self.dims).float(),
+            requires_grad=self.learn_initial
         )
 
     def forward(self, X):
