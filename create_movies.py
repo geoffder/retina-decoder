@@ -79,13 +79,14 @@ def build_cell_movie(folder, dims, coords, diams, downsample, space_redux):
     duration = recs.shape[0] // downsample
     dims = np.array(dims) // space_redux  # must be int for shape
     coords, diams = (coords / space_redux, np.array(diams) / space_redux)
-    movie = np.zeros((*dims, duration))
+
+    movie = np.zeros((duration, *dims))
     x, y = np.ogrid[:dims[0], :dims[1]]
     for i in range(coords.shape[0]):
         cx, cy = coords[i, :]
         r2 = (x - cx)**2 + (y - cy)**2
         r = (diams[i]/2)**2
-        movie[r2 <= r, :] += resample(recs[:, i], duration)
+        movie[:, r2 <= r] += resample(recs[:, i], duration).reshape(-1, 1)
 
     return recs, movie
 
@@ -113,7 +114,7 @@ def build_stim_movie(folder, dims, downsample, space_redux):
     idx = np.arange(0, recs[0].shape[0], downsample)  # for downsampling slice
     dims = np.array(dims) // space_redux
 
-    movie = np.zeros((*dims, duration))
+    movie = np.zeros((duration, *dims))
     x, y = np.ogrid[:dims[0], :dims[1]]
     for rec, param in zip(recs, params):
         # scipy resample was not working corectly for this coordinate data
@@ -127,7 +128,7 @@ def build_stim_movie(folder, dims, downsample, space_redux):
                 # rotate to match orientation of bar
                 xrot, yrot = rotate((xpos, ypos), x, y, np.radians(orient))
                 # rectangular mask
-                movie[:, :, t] += (
+                movie[t, :, :] += (
                     (np.abs(xrot-xpos) <= param['width']/2/space_redux)
                     * (np.abs(yrot-ypos) <= param['length']/2/space_redux)
                 ) * amp
@@ -135,7 +136,7 @@ def build_stim_movie(folder, dims, downsample, space_redux):
                 # convert cartesian --> polar coordinates
                 r2 = (x - xpos)**2 + (y - ypos)**2
                 # circular mask
-                movie[:, :, t] += (r2 <= (param['radius']/space_redux)**2)*amp
+                movie[t, :, :] += (r2 <= (param['radius']/space_redux)**2)*amp
 
     return recs, movie
 
@@ -268,13 +269,12 @@ def package_experiment(folder, exp_name, downsample=1, space_redux=1):
     db.close()
 
 
-def movie_giffer(fname, matrix, max_val=None, downsample=1):
+def movie_giffer(fname, vid, max_val=None, downsample=1):
     """
     Takes desired filename (without '.gif') and a numpy matrix
     (in H x W x Frames organization right now) and saves it as a GIF using
     the PIL.Image module.
     """
-    vid = matrix.transpose(2, 0, 1)
     # normalize and save as gif
     if max_val is None:
         vid = (vid/vid.max()*255).clip(0, 255).astype(np.uint8)
@@ -314,10 +314,73 @@ def test_gifs(stim):
         progress.step()
 
 
+def build_folder_dataset(basepath, folder, downsample=1, space_redux=1):
+    # create dataset parent folder (basepath is where raw recordings are)
+    datafolder = basepath+folder
+    os.mkdir(datafolder)
+
+    # get all entries in given folder that are directories
+    net_names = [
+        name for name in os.listdir(basepath)
+        if os.path.isdir(basepath+name) and 'net' in name
+    ]
+    # all stimuli shown to these networks
+    stim_names = [
+        name for name in os.listdir(basepath+net_names[0])
+        if os.path.isdir(basepath+net_names[0]+'/'+name)
+    ]
+    for net in net_names:
+        # new folder for this network's movies
+        os.mkdir(datafolder+net)
+        # (x, y) coordinates of all cells in network
+        coords = np.loadtxt(basepath+net+'/cellCoords.csv', delimiter=',')
+        # net parameters
+        netpars = json.loads(open(basepath+net+'/netParams.txt').read())
+        # cell parameters
+        params = [json.loads(line)
+                  for line in open(basepath+net+'/cellParams.txt').readlines()]
+        diams = [cell['diam'] for cell in params]
+        # soma masks of each cell, shape:(NxHxW)
+        soma_masks = get_masks(
+            [netpars['xdim'], netpars['ydim']], coords, diams, space_redux
+        )
+        # make folder and store masks of all cells
+        os.mkdir(datafolder+net+'/masks/')
+        np.save(datafolder+net+'/masks/all_masks', soma_masks)
+
+        # create and store videos of cells
+        os.mkdir(datafolder+net+'/cells/')
+        print('Packaging movies for %s...' % net)
+        progress = ProgressBar(len(stim_names))
+        for stim in stim_names:
+            pth = basepath + '/' + net + '/' + stim + '/'
+            _, cell_movie = build_cell_movie(
+                pth, [netpars['xdim'], netpars['ydim']], coords, diams,
+                downsample, space_redux
+            )
+            np.save(datafolder+net+'/cells/'+stim, cell_movie)
+            progress.step()
+
+    os.mkdir(datafolder+'/stims/')
+    print('Packaging movies for stimuli...')
+    progress = ProgressBar(len(stim_names))
+    for stim in stim_names:
+        pth = basepath + '/' + net_names[0] + '/' + stim + '/'
+        _, stim_movie = build_stim_movie(
+            pth, [netpars['xdim'], netpars['ydim']], downsample, space_redux
+        )
+        np.save(datafolder+'/stims/'+stim, stim_movie)
+        progress.step()
+
+
 if __name__ == '__main__':
     datapath = 'D:/retina-sim-data/'
 
-    package_experiment(
-        datapath, 'testExperiment', downsample=10, space_redux=2
-    )
+    # package_experiment(
+    #     datapath, 'testExperiment', downsample=10, space_redux=4
+    # )
     # test_gifs('med_light_bar')
+
+    build_folder_dataset(
+        datapath, 'video_dataset/', downsample=10, space_redux=4
+    )
