@@ -29,7 +29,7 @@ class StackPlotter(object):
     '''
     def __init__(self, ax, X, delta=10):
         self.ax = ax
-        ax.set_title('use scroll wheel to navigate images')
+        # ax.set_title('use scroll wheel to navigate images')
 
         self.X = X
         rows, cols, self.slices = X.shape
