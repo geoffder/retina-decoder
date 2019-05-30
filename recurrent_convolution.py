@@ -14,7 +14,7 @@ def init_filter(shape):
 class ConvGRUCell(nn.Module):
 
     def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
-                 learn_initial=True):
+                 learn_initial=False):
         super(ConvGRUCell, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -31,17 +31,20 @@ class ConvGRUCell(nn.Module):
     def build(self):
         # input weight (transforms X before entering the hidden recurrence)
         self.Wxh = init_filter(self.in_shape)
+        self.bxh = nn.Parameter(torch.zeros(self.out_channels).float())
         # hidden weight and bias
         self.Whh = init_filter(self.out_shape)
-        self.bh = nn.Parameter(torch.zeros(self.out_channels).float())
+        self.bhh = nn.Parameter(torch.zeros(self.out_channels).float())
         # update gate weights
         self.Wxz = init_filter(self.in_shape)
+        self.bxz = nn.Parameter(torch.zeros(self.out_channels).float())
         self.Whz = init_filter(self.out_shape)
-        self.bz = nn.Parameter(torch.zeros(self.out_channels).float())
+        self.bhz = nn.Parameter(torch.zeros(self.out_channels).float())
         # reset gate weights
         self.Wxr = init_filter(self.in_shape)
+        self.bxr = nn.Parameter(torch.zeros(self.out_channels).float())
         self.Whr = init_filter(self.out_shape)
-        self.br = nn.Parameter(torch.zeros(self.out_channels).float())
+        self.bhr = nn.Parameter(torch.zeros(self.out_channels).float())
         # initial hidden repesentation
         self.h0 = nn.Parameter(
             torch.zeros(self.out_channels, *self.dims).float(),
@@ -60,19 +63,25 @@ class ConvGRUCell(nn.Module):
         for frame in X:
             # calculate gates
             reset_gate = torch.sigmoid(
-                F.conv2d(frame, self.Wxr, bias=self.br, padding=self.in_pad)
-                + F.conv2d(hidden, self.Whr, padding=self.out_pad)
+                F.conv2d(frame, self.Wxr, bias=self.bxr, padding=self.in_pad)
+                + F.conv2d(
+                    hidden, self.Whr, bias=self.bhr, padding=self.out_pad
+                )
             )
             update_gate = torch.sigmoid(
-                F.conv2d(frame, self.Wxz, bias=self.bz, padding=self.in_pad)
-                + F.conv2d(hidden, self.Whz, padding=self.out_pad)
+                F.conv2d(frame, self.Wxz, bias=self.bxz, padding=self.in_pad)
+                + F.conv2d(
+                    hidden, self.Whz, bias=self.bhz, padding=self.out_pad
+                )
             )
             # update hidden representation
-            h_hat = F.relu(
-                F.conv2d(frame, self.Wxh, bias=self.bh, padding=self.in_pad)
-                + F.conv2d(reset_gate*hidden, self.Whh, padding=self.out_pad)
+            h_hat = torch.tanh(
+                F.conv2d(frame, self.Wxh, bias=self.bxh, padding=self.in_pad)
+                + reset_gate * F.conv2d(
+                    hidden, self.Whh, bias=self.bhh, padding=self.out_pad
+                )
             )
-            hidden = h_hat*update_gate + hidden*(1 - update_gate)
+            hidden = hidden*update_gate + h_hat*(1 - update_gate)
             # add hidden state to output sequence
             out.append(hidden)
 
@@ -82,7 +91,7 @@ class ConvGRUCell(nn.Module):
 class ConvLSTMCell(nn.Module):
 
     def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
-                 learn_initial=True):
+                 learn_initial=False):
         super(ConvLSTMCell, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -174,8 +183,14 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
 
     # generate random data and build Convolutional RNN cells
-    data = torch.randn(60, 5, 10, 30, 30)
-    gru = ConvGRUCell((30, 30), (3, 3), (3, 3), 10, 20).to(device)
+    data = torch.randn(60, 5, 10, 30, 30)  # (T, N, C, H, W)
+    gru = ConvGRUCell(
+        (30, 30),  # input dimensions  (H, W)
+        (3, 3),  # input weight filter kernel
+        (3, 3),  # output weight filter kernel
+        10,  # input channels
+        20  # hidden/output channels
+    ).to(device)
     lstm = ConvLSTMCell((30, 30), (3, 3), (3, 3), 10, 20).to(device)
 
     # run data through Convolutional RNNs
