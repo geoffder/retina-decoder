@@ -1,16 +1,15 @@
-import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 
-import os
-from recurrent_convolution import ConvGRUCell, ConvLSTMCell
+import recurrent_convolution as crnns
 from sim_util import StackPlotter
 
 import torch
 from torch import nn
 import torch.nn.functional as F
 from torch import optim
-from torch.utils.data import Dataset, DataLoader
+
+from retina_dataset import RetinaVideos
+from torch.utils.data import DataLoader
 
 """
 Thoughts:
@@ -29,10 +28,9 @@ Thoughts:
 
 class RetinaDecoder(nn.Module):
 
-    def __init__(self, dims, crnn_cell_params, crnn_cell=ConvGRUCell,
+    def __init__(self, crnn_cell_params, crnn_cell=crnns.ConvGRUCell,
                  learn_initial=False):
         super(RetinaDecoder, self).__init__()
-        self.dims = dims
         self.crnn_cell_params = crnn_cell_params
         self.crnn_cell = crnn_cell
         self.learn_initial = learn_initial
@@ -40,20 +38,46 @@ class RetinaDecoder(nn.Module):
         self.to(device)
 
     def build(self):
+        # self.stack_bnorms = nn.ModuleList()
         self.crnn_stack = nn.ModuleList()
         for i, params in enumerate(self.crnn_cell_params):
+            # self.stack_bnorms.append(nn.BatchNorm3d(60))
             # recurrenct convolutional cells (GRU or LSTM)
             self.crnn_stack.append(
                 self.crnn_cell(
-                    self.dims, *params, learn_initial=self.learn_initial
+                    *params, learn_initial=self.learn_initial
                 )
             )
+        self.reduce_conv = nn.Conv2d(params[-1], 1, (1, 1))
+        self.reduce_bnorm = nn.BatchNorm2d(1)
 
     def forward(self, X):
+        # stacked convolutional recurrent cells
+        # for cell, bnorm in zip(self.crnn_stack, self.stack_bnorms):
         for cell in self.crnn_stack:
             X, _ = cell(X)
-            # X = F.elu(X)
-            X = torch.sigmoid(X)
+            # X = bnorm(X.transpose(0, 1)).transpose(0, 1)
+            X = F.elu(X)
+            # X = torch.sigmoid(X)
+            # frames = []
+            # for frame in X:
+            #     # maybe to pool with stride and return indices, so unpool can
+            #     # be used.
+            #     frames.append(
+            #         F.max_pool2d(frame, kernel_size=3, stride=1, padding=1)
+            #     )
+            # X = torch.stack(frames, dim=0)
+            # del frames
+
+        # reduce channel dimensionality to 1, frame by frame.
+        frames = []
+        for frame in X:
+            frames.append(self.reduce_bnorm(self.reduce_conv(frame)))
+        X = torch.stack(frames, dim=0)
+        del frames
+        # X = self.reduce_bnorm(X.transpose(0, 1)).transpose(0, 1)
+        # X = F.elu(X)
+        X = torch.sigmoid(X)
         X = torch.clamp(X, 0, 1)
         return X
 
@@ -81,8 +105,11 @@ class RetinaDecoder(nn.Module):
 
                 cost += self.train_step(
                     batch['net'].transpose(0, 1).to(device),
+                    # batch['net'].to(device),
                     batch['stim'].to(device)
                 )
+                # try sending batch to GPU, then passing (then delete)
+                del batch  # test whether useful for clearing off GPU
 
                 if j % print_every == 0:
                     # costs and accuracies for test set
@@ -90,10 +117,12 @@ class RetinaDecoder(nn.Module):
                     for t, testB in enumerate(test_loader, 1):
                         testB_cost = self.get_cost(
                             testB['net'].transpose(0, 1).to(device),
+                            # testB['net'].to(device),
                             testB['stim'].to(device)
                         )
                         test_cost += testB_cost
                     test_cost /= t+1
+                    del testB
 
                     print("cost: %f" % (test_cost))
 
@@ -175,77 +204,9 @@ class RetinaDecoder(nn.Module):
                 break
 
 
-class RetinaVideos(Dataset):
-    """Cluster encoded ganglion network and stimulus video Dataset."""
-
-    def __init__(self, root_dir):
-        self.root_dir = root_dir
-        self.rec_frame = self.build_lookup(root_dir)
-        # maybe load the cluster masks for all networks and keep in mem?
-        # same for stimuli? Just load in the network recs since they are the
-        # bigger lump of data
-
-    @staticmethod
-    def build_lookup(root_dir):
-        """
-        Make a lookup table of recordings (file names correspond to stimuli)
-        found in the replicate network folders. Corresponding recording and
-        stimuli files are found in the 'root/net#/cells/' and 'root/stims/'
-        folders respectively.
-        """
-        net_names = [
-            name for name in os.listdir(root_dir)
-            if os.path.isdir(root_dir+name) and 'net' in name
-        ]
-        table = [
-            [net, file]
-            for k, net in enumerate(net_names)
-            for file in [name for name in os.listdir(root_dir+net+'/cells/')
-                         if os.path.isfile(root_dir+net+'/cells/'+name)]
-        ]
-        return pd.DataFrame(table)
-
-    def __len__(self):
-        "Number of samples in dataset."
-        return len(self.rec_frame)
-
-    def __getitem__(self, idx):
-        rec = np.load(os.path.join(
-            self.root_dir,
-            self.rec_frame.iloc[idx, 0],  # net folder
-            'cells',
-            self.rec_frame.iloc[idx, 1]  # file name
-        ))
-        masks = np.load(os.path.join(
-            self.root_dir,
-            self.rec_frame.iloc[idx, 0],  # net folder
-            'masks',
-            'clusters.npy'
-        ))
-        stim = np.load(os.path.join(
-            self.root_dir,
-            'stims',
-            self.rec_frame.iloc[idx, 1]  # file name
-        ))
-
-        # normalize movies (shouldn't be doing this sample by sample)
-        # sort out some kind of a batch norm scheme
-        rec = (rec - rec.mean()) / rec.std()
-        stim = (stim - stim.min()) / (np.abs(stim.min())+stim.max())
-        # Take shape (TxHxW) and encode to (TxCxHxW) with C cluster masks
-        rec = np.stack([rec*mask for mask in masks], axis=1)
-
-        # convert to torch Tensors
-        rec = torch.from_numpy(rec).float()
-        stim = torch.from_numpy(stim).float().unsqueeze(1)  # add channel dim
-
-        sample = {'net': rec, 'stim': stim}
-        return sample
-
-
 def decoder_setup_1():
     decoder = RetinaDecoder(
-        (175, 175),  # input spatial dimensions
+        (100, 100),  # input spatial dimensions
         # for each cell: [in_kernel, out_kernel, in_channels, out_channels]
         [
             [(3, 3), (3, 3), 14, 28],
@@ -253,32 +214,35 @@ def decoder_setup_1():
             [(3, 3), (3, 3), 56, 28],
             [(3, 3), (1, 1), 56, 1]
         ],
-        crnn_cell=ConvLSTMCell
+        crnn_cell=crnns.ConvLSTMCell1
     )
     return decoder
 
 
 def decoder_setup_2():
     decoder = RetinaDecoder(
-        (175, 175),  # input spatial dimensions
-        # for each cell: [in_kernel, out_kernel, in_channels, out_channels]
+        # (100, 100),  # input spatial dimensions
+        # for each cell:
+        # [spatial_dims, in_kernel, out_kernel, in_channels, out_channels]
         [
-            [(13, 13), (7, 7), 14, 28],
-            [(3, 3), (3, 3), 28, 1],
+            [(100, 100), (13, 13), (13, 13), 14, 42],
+            [(100, 100), (7, 7), (7, 7), 42, 14],
         ],
-        crnn_cell=ConvGRUCell
+        crnn_cell=crnns.ConvGRUCell_bnorm2,
+        # crnn_cell=ConvLSTMCell2,
+        learn_initial=True
     )
     return decoder
 
 
 def decoder_setup_3():
     decoder = RetinaDecoder(
-        (175, 175),  # input spatial dimensions
+        (100, 100),  # input spatial dimensions
         # for each cell: [in_kernel, out_kernel, in_channels, out_channels]
         [
             [(3, 3), (3, 3), 14, 1],
         ],
-        crnn_cell=ConvGRUCell
+        crnn_cell=crnns.ConvGRUCell
     )
     return decoder
 
@@ -287,12 +251,12 @@ def main():
     train_path = 'D:/retina-sim-data/video_dataset/'
     test_path = 'D:/retina-sim-data/small_video_dataset/'
 
-    train_set = RetinaVideos(test_path)
-    test_set = RetinaVideos(test_path)
+    train_set = RetinaVideos(train_path, preload=True, crop_centre=[100, 100])
+    test_set = RetinaVideos(test_path, preload=True, crop_centre=[100, 100])
 
     decoder = decoder_setup_2()
     decoder.fit(
-        train_set, test_set, lr=1e-5, epochs=1, batch_sz=1, print_every=3
+        train_set, test_set, lr=1e-3, epochs=1, batch_sz=2, print_every=60
     )
     decoder.decode(train_set)
 
