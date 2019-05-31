@@ -93,15 +93,17 @@ class RetinaVideos(Dataset):
         else:
             if self.crop_centre is not None:
                 masks = self.crop(self.get_masks(idx))
-                stim = self.cop(self.get_stims(idx))
+                stim = self.crop(self.get_stims(idx))
             else:
                 masks = self.get_masks(idx)
                 stim = self.get_stims(idx)
 
         # normalize movies (shouldn't be doing this sample by sample)
         # sort out some kind of a batch norm scheme
-        rec = (rec - rec.mean()) / rec.std()
-        stim = (stim - stim.min()) / (np.abs(stim.min())+stim.max())
+        # rec = (rec - rec.mean()) / rec.std()
+        # stim = (stim - stim.min()) / (np.abs(stim.min())+stim.max())
+        stim = stim.clip(-1, 1)
+
         # Take shape (TxHxW) and encode to (TxCxHxW) with C cluster masks
         rec = np.stack([rec*mask for mask in masks], axis=1)
 
