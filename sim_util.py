@@ -36,8 +36,10 @@ class StackPlotter(object):
         self.ind = 0
         self.delta = delta
 
-        self.im = ax.imshow(self.X[:, :, self.ind], cmap='gray', vmin=0,
-                            vmax=np.max(X))
+        self.im = ax.imshow(
+            self.X[:, :, self.ind], cmap='gray',
+            vmin=np.min(X), vmax=np.max(X)
+        )
         self.update()
 
     def onscroll(self, event):
