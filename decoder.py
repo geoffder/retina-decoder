@@ -1,3 +1,4 @@
+import numpy as np
 import matplotlib.pyplot as plt
 
 import recurrent_convolution as crnns
@@ -57,8 +58,9 @@ class RetinaDecoder(nn.Module):
         for cell in self.crnn_stack:
             X, _ = cell(X)
             # X = bnorm(X.transpose(0, 1)).transpose(0, 1)
-            X = F.elu(X)
+            # X = F.elu(X)
             # X = torch.sigmoid(X)
+            # X = torch.tanh(X)
             # frames = []
             # for frame in X:
             #     # maybe to pool with stride and return indices, so unpool can
@@ -77,12 +79,13 @@ class RetinaDecoder(nn.Module):
         del frames
         # X = self.reduce_bnorm(X.transpose(0, 1)).transpose(0, 1)
         # X = F.elu(X)
-        X = torch.sigmoid(X)
-        X = torch.clamp(X, 0, 1)
+        # X = torch.sigmoid(X)
+        X = torch.tanh(X)
+        # X = torch.clamp(X, 0, 1)
         return X
 
-    def fit(self, train_set, test_set, lr=1e-4, epochs=40, batch_sz=10,
-            print_every=15):
+    def fit(self, train_set, test_set, lr=1e-4, epochs=10, batch_sz=1,
+            print_every=40):
 
         train_loader = DataLoader(
             train_set, batch_size=batch_sz, shuffle=True, num_workers=2
@@ -92,7 +95,10 @@ class RetinaDecoder(nn.Module):
         )
         N = train_set.__len__()  # number of samples
 
-        self.loss = nn.MSELoss().to(device)
+        # self.loss = nn.MSELoss().to(device)
+        # self.loss = nn.L1Loss().to(device)  # first attempt not promising
+        # self.loss = nn.SmoothL1Loss().to(device)  # try
+        self.loss = nn.KLDivLoss().to(device)  # try
         # self.loss = nn.BCELoss().to(device)
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
 
@@ -183,6 +189,8 @@ class RetinaDecoder(nn.Module):
             net = sample['net'].squeeze().numpy().sum(axis=1)
             net = net.transpose(1, 2, 0)
             stim = sample['stim'].squeeze().numpy().transpose(1, 2, 0)
+            # normalize for visualization
+            # stim = (stim - stim.min()) / (np.abs(stim.min())+stim.max())
 
             # synced scrollable videos of cell actity, decoding, and stimulus
             fig, ax = plt.subplots(1, 3)
@@ -225,12 +233,12 @@ def decoder_setup_2():
         # for each cell:
         # [spatial_dims, in_kernel, out_kernel, in_channels, out_channels]
         [
-            [(100, 100), (13, 13), (13, 13), 14, 42],
-            [(100, 100), (7, 7), (7, 7), 42, 14],
+            [(100, 100), (13, 13), (7, 7), 14, 32],
+            [(100, 100), (5, 5), (3, 3), 32, 32],
         ],
         crnn_cell=crnns.ConvGRUCell_bnorm2,
         # crnn_cell=ConvLSTMCell2,
-        learn_initial=True
+        learn_initial=False
     )
     return decoder
 
@@ -256,7 +264,7 @@ def main():
 
     decoder = decoder_setup_2()
     decoder.fit(
-        train_set, test_set, lr=1e-3, epochs=1, batch_sz=2, print_every=60
+        train_set, test_set, lr=1e-1, epochs=1, batch_sz=2, print_every=100
     )
     decoder.decode(train_set)
 
