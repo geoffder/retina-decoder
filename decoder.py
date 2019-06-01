@@ -27,6 +27,22 @@ Thoughts:
 """
 
 
+class DecoderLoss(nn.Module):
+    """
+    Experimental. Idea is to harshly penalize safe (mean) predictions and
+    encourage the model to try to move it's output towards the non-zero
+    stimulus values, rather than staying near zero always to minimize loss
+    (since most of the video is zero).
+    """
+    def __init__(self, alpha=1):
+        super(DecoderLoss, self).__init__()
+        self.alpha = alpha
+
+    def forward(self, decoding, targets):
+        error = (decoding - targets).pow(2) * (1 + self.alpha*targets.abs())
+        return error.mean()
+
+
 class RetinaDecoder(nn.Module):
 
     def __init__(self, crnn_cell_params, crnn_cell=crnns.ConvGRUCell,
@@ -96,10 +112,7 @@ class RetinaDecoder(nn.Module):
         N = train_set.__len__()  # number of samples
 
         # self.loss = nn.MSELoss().to(device)
-        # self.loss = nn.L1Loss().to(device)  # first attempt not promising
-        # self.loss = nn.SmoothL1Loss().to(device)  # try
-        self.loss = nn.KLDivLoss().to(device)  # try
-        # self.loss = nn.BCELoss().to(device)
+        self.loss = DecoderLoss(alpha=10).to(device)
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
 
         n_batches = N // batch_sz
@@ -197,6 +210,9 @@ class RetinaDecoder(nn.Module):
             net_stack = StackPlotter(ax[0], net, delta=1)
             deco_stack = StackPlotter(ax[1], decoded, delta=1)
             stim_stack = StackPlotter(ax[2], stim, delta=1)
+            # net_stack = StackPlotter(ax[0], net, delta=1, min=0)
+            # deco_stack = StackPlotter(ax[1], decoded, delta=1, min=-1, max=1)
+            # stim_stack = StackPlotter(ax[2], stim, delta=1, min=-1, max=1)
             fig.canvas.mpl_connect('scroll_event', net_stack.onscroll)
             fig.canvas.mpl_connect('scroll_event', deco_stack.onscroll)
             fig.canvas.mpl_connect('scroll_event', stim_stack.onscroll)
@@ -237,7 +253,7 @@ def decoder_setup_2():
             [(100, 100), (5, 5), (3, 3), 32, 32],
         ],
         crnn_cell=crnns.ConvGRUCell_bnorm2,
-        # crnn_cell=ConvLSTMCell2,
+        # crnn_cell=crnns.ConvLSTMCell2_bnorm,
         learn_initial=False
     )
     return decoder
@@ -264,7 +280,7 @@ def main():
 
     decoder = decoder_setup_2()
     decoder.fit(
-        train_set, test_set, lr=1e-1, epochs=1, batch_sz=2, print_every=100
+        train_set, test_set, lr=1e-2, epochs=2, batch_sz=2, print_every=100
     )
     decoder.decode(train_set)
 
