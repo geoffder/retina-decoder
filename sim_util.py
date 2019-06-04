@@ -27,7 +27,7 @@ class StackPlotter(object):
     arguments. Additionally, use delta to set the number of frames each step of
     the wheel skips through.
     '''
-    def __init__(self, ax, X, delta=10, min=None, max=None, cmap='gray'):
+    def __init__(self, ax, X, delta=10, vmin=None, vmax=None, cmap='gray'):
         self.ax = ax
         # ax.set_title('use scroll wheel to navigate images')
 
@@ -36,13 +36,13 @@ class StackPlotter(object):
         self.ind = 0
         self.delta = delta
 
-        self.im = ax.imshow(
-            self.X[:, :, self.ind], cmap='gray',
-            vmin=np.min(X), vmax=np.max(X)
-        )
         # self.im = ax.imshow(
-        #     self.X[:, :, self.ind], cmap=cmap, vmin=min, vmax=max
+        #     self.X[:, :, self.ind], cmap='gray',
+        #     vmin=np.min(X), vmax=np.max(X)
         # )
+        self.im = ax.imshow(
+            self.X[:, :, self.ind], cmap=cmap, vmin=vmin, vmax=vmax
+        )
         self.update()
 
     def onscroll(self, event):
