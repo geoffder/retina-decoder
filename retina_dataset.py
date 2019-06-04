@@ -15,11 +15,8 @@ class RetinaVideos(Dataset):
         self.rec_frame = self.build_lookup(root_dir)
         self.preload = preload
         self.crop_centre = crop_centre
-        if preload:
+        if preload:  # load data that is common across samples to memory
             self.all_masks, self.all_stims = self.preloader()
-        # maybe load the cluster masks for all networks and keep in mem?
-        # same for stimuli? Just load in the network recs since they are the
-        # bigger lump of data
 
     @staticmethod
     def build_lookup(root_dir):
@@ -57,6 +54,7 @@ class RetinaVideos(Dataset):
         return matrix[:, ox-x:ox+x, oy-y:oy+y]
 
     def get_masks(self, idx):
+        "Load cluster masks for each network into memory."
         masks = np.load(os.path.join(
                 self.root_dir,
                 self.rec_frame.iloc[idx, 0],  # net folder
@@ -66,6 +64,7 @@ class RetinaVideos(Dataset):
         return masks
 
     def get_stim(self, idx):
+        "Load stimuli (common across all networks) into memory."
         stim = np.load(os.path.join(
                 self.root_dir,
                 'stims',
