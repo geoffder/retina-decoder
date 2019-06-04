@@ -1,4 +1,4 @@
-import numpy as np
+# import numpy as np
 import matplotlib.pyplot as plt
 
 import recurrent_convolution as crnns
@@ -6,9 +6,10 @@ from sim_util import StackPlotter
 
 import torch
 from torch import nn
-import torch.nn.functional as F
+# import torch.nn.functional as F
 from torch import optim
 
+from custom_loss import DecoderLoss
 from retina_dataset import RetinaVideos
 from torch.utils.data import DataLoader
 
@@ -27,22 +28,6 @@ Thoughts:
 """
 
 
-class DecoderLoss(nn.Module):
-    """
-    Experimental. Idea is to harshly penalize safe (mean) predictions and
-    encourage the model to try to move it's output towards the non-zero
-    stimulus values, rather than staying near zero always to minimize loss
-    (since most of the video is zero).
-    """
-    def __init__(self, alpha=1):
-        super(DecoderLoss, self).__init__()
-        self.alpha = alpha
-
-    def forward(self, decoding, targets):
-        error = (decoding - targets).pow(2) * (1 + self.alpha*targets.abs())
-        return error.mean()
-
-
 class RetinaDecoder(nn.Module):
 
     def __init__(self, crnn_cell_params, crnn_cell=crnns.ConvGRUCell,
@@ -55,10 +40,8 @@ class RetinaDecoder(nn.Module):
         self.to(device)
 
     def build(self):
-        # self.stack_bnorms = nn.ModuleList()
         self.crnn_stack = nn.ModuleList()
         for i, params in enumerate(self.crnn_cell_params):
-            # self.stack_bnorms.append(nn.BatchNorm3d(60))
             # recurrenct convolutional cells (GRU or LSTM)
             self.crnn_stack.append(
                 self.crnn_cell(
@@ -70,22 +53,8 @@ class RetinaDecoder(nn.Module):
 
     def forward(self, X):
         # stacked convolutional recurrent cells
-        # for cell, bnorm in zip(self.crnn_stack, self.stack_bnorms):
         for cell in self.crnn_stack:
             X, _ = cell(X)
-            # X = bnorm(X.transpose(0, 1)).transpose(0, 1)
-            # X = F.elu(X)
-            # X = torch.sigmoid(X)
-            # X = torch.tanh(X)
-            # frames = []
-            # for frame in X:
-            #     # maybe to pool with stride and return indices, so unpool can
-            #     # be used.
-            #     frames.append(
-            #         F.max_pool2d(frame, kernel_size=3, stride=1, padding=1)
-            #     )
-            # X = torch.stack(frames, dim=0)
-            # del frames
 
         # reduce channel dimensionality to 1, frame by frame.
         frames = []
@@ -93,11 +62,8 @@ class RetinaDecoder(nn.Module):
             frames.append(self.reduce_bnorm(self.reduce_conv(frame)))
         X = torch.stack(frames, dim=0)
         del frames
-        # X = self.reduce_bnorm(X.transpose(0, 1)).transpose(0, 1)
-        # X = F.elu(X)
-        # X = torch.sigmoid(X)
+
         X = torch.tanh(X)
-        # X = torch.clamp(X, 0, 1)
         return X
 
     def fit(self, train_set, test_set, lr=1e-4, epochs=10, batch_sz=1,
@@ -197,22 +163,18 @@ class RetinaDecoder(nn.Module):
                 # get stimulus prediction from network activity
                 decoded = self.forward(sample['net'].to(device))
 
-            # Reduce out batch and channel dims (T, N, C, H, W) -> (T, H, W)
+            # Reduce out batch and channel dims, then put time last
+            # (T, N, C, H, W) -> (H, W, T)
             decoded = decoded.squeeze().cpu().numpy().transpose(1, 2, 0)
             net = sample['net'].squeeze().numpy().sum(axis=1)
             net = net.transpose(1, 2, 0)
             stim = sample['stim'].squeeze().numpy().transpose(1, 2, 0)
-            # normalize for visualization
-            # stim = (stim - stim.min()) / (np.abs(stim.min())+stim.max())
 
             # synced scrollable videos of cell actity, decoding, and stimulus
             fig, ax = plt.subplots(1, 3)
-            net_stack = StackPlotter(ax[0], net, delta=1)
-            deco_stack = StackPlotter(ax[1], decoded, delta=1)
-            stim_stack = StackPlotter(ax[2], stim, delta=1)
-            # net_stack = StackPlotter(ax[0], net, delta=1, min=0)
-            # deco_stack = StackPlotter(ax[1], decoded, delta=1, min=-1, max=1)
-            # stim_stack = StackPlotter(ax[2], stim, delta=1, min=-1, max=1)
+            net_stack = StackPlotter(ax[0], net, delta=1, vmin=0)
+            deco_stack = StackPlotter(ax[1], decoded, delta=1, vmin=-1, vmax=1)
+            stim_stack = StackPlotter(ax[2], stim, delta=1, vmin=-1, vmax=1)
             fig.canvas.mpl_connect('scroll_event', net_stack.onscroll)
             fig.canvas.mpl_connect('scroll_event', deco_stack.onscroll)
             fig.canvas.mpl_connect('scroll_event', stim_stack.onscroll)
