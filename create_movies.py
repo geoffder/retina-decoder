@@ -374,7 +374,7 @@ def build_folder_dataset(basepath, folder, downsample=1, space_redux=1):
 
 
 if __name__ == '__main__':
-    datapath = 'D:/retina-sim-data/'
+    datapath = 'D:/retina-sim-data/second/'
 
     # package_experiment(
     #     datapath, 'testExperiment', downsample=10, space_redux=4

@@ -50,7 +50,7 @@ if __name__ == '__main__':
     plt.rc('axes', prop_cycle=(cycler('color', new_colors)))
 
     # folder names
-    datapath = 'D:/retina-sim-data/'
+    datapath = 'D:/retina-sim-data/second/'
     net_names = [name for name in os.listdir(datapath)
                  if os.path.isdir(datapath+name) and 'net' in name]
 

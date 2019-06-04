@@ -51,8 +51,8 @@ def sum_masks(pth, folder, clusts):
 
 
 def main():
-    basepath = 'D:/retina-sim-data/'
-    datapath = 'D:/retina-sim-data/video_dataset/'
+    basepath = 'D:/retina-sim-data/second/'
+    datapath = 'D:/retina-sim-data/second/video_dataset/'
 
     net_names = [
         name for name in os.listdir(basepath)
