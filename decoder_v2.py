@@ -19,18 +19,25 @@ Thoughts:
     and channel mixing.
 - try regular convolutions after (or interleaved) with transpose convolutions
     to smooth out the blockiness that arises from the upsampling.
+- try causal convolutions, non-causal ones were not helpful, see if proper
+    temporal convolutions improve the situation
+- create decoder_v3 and try using lists of dicts for layer params to try and
+    make the models build read more clearly.
 """
 
 
 class RetinaDecoder(nn.Module):
 
-    def __init__(self, conv_params, crnn_cell_params, trans_params,
-                 crnn_cell=crnns.ConvGRUCell, learn_initial=False):
+    def __init__(self, grp_conv_params, conv_params, crnn_cell_params,
+                 trans_params, post_conv_params, crnn_cell=crnns.ConvGRUCell,
+                 learn_initial=False):
         super(RetinaDecoder, self).__init__()
         # layer parameters
+        self.grp_conv_params = grp_conv_params
         self.conv_params = conv_params
         self.crnn_cell_params = crnn_cell_params
         self.trans_params = trans_params
+        self.post_conv_params = post_conv_params
         # ConvRNN settings
         self.crnn_cell = crnn_cell
         self.learn_initial = learn_initial
@@ -39,7 +46,10 @@ class RetinaDecoder(nn.Module):
         self.to(device)
 
     def build(self):
-        # convolutionals
+        # grouped convolutions
+        self.grp_conv_layers = nn.ModuleList()
+        self.grp_conv_bnorms = nn.ModuleList()
+        # convolutions
         self.conv_layers = nn.ModuleList()
         self.conv_bnorms = nn.ModuleList()
         # recurrent convolutions
@@ -47,13 +57,30 @@ class RetinaDecoder(nn.Module):
         # transpose convolutions
         self.trans_layers = nn.ModuleList()
         self.trans_bnorms = nn.ModuleList()
+        # post-upsampling convolutions
+        self.post_conv_layers = nn.ModuleList()
+        self.post_conv_bnorms = nn.ModuleList()
+
+        for params in self.grp_conv_params:
+            # params: [in, out, (kernel), (stride), (dilation), groups]
+            pad = (
+                (params[2][0]*params[4][0] - 1)//2,
+                (params[2][1]*params[4][1] - 1)//2,
+                (params[2][2]*params[4][2] - 1)//2
+            )
+            self.grp_conv_layers.append(
+                nn.Conv3d(*params[:4], pad, *params[4:])
+            )
+            self.grp_conv_bnorms.append(nn.BatchNorm3d(params[1]))
 
         for params in self.conv_params:
+            # params: [in, out, (kernel), (stride)]
             pad = (params[2][0]//2, params[2][1]//2, params[2][2]//2)
             self.conv_layers.append(nn.Conv3d(*params, pad))
             self.conv_bnorms.append(nn.BatchNorm3d(params[1]))
 
         for params in self.crnn_cell_params:
+            # params: [(dims), (in_kernel), (out_kernel), in_C, out_C]
             # recurrenct convolutional cells (GRU or LSTM)
             self.crnn_stack.append(
                 self.crnn_cell(
@@ -68,13 +95,24 @@ class RetinaDecoder(nn.Module):
             )
             self.trans_bnorms.append(nn.BatchNorm3d(params[1]))
 
+        for params in self.post_conv_params:
+            # params: [in, out, (kernel), (stride)]
+            pad = (params[2][0]//2, params[2][1]//2, params[2][2]//2)
+            self.post_conv_layers.append(nn.Conv3d(*params, pad))
+            self.post_conv_bnorms.append(nn.BatchNorm3d(params[1]))
+
     def forward(self, X):
         # time to 'depth' dimension
         X = X.permute(1, 2, 0, 3, 4)  # to (N, C, T, H, W)
 
-        # reduce spatial dimensionality
+        # reduce spatial dimensionality (collate somatic information)
         X = F.avg_pool3d(X, (1, 2, 2))
-        # depth-wise (space only) convolutions
+
+        # grouped (cluster siloed) convolutions
+        for conv, bnorm in zip(self.grp_conv_layers, self.grp_conv_bnorms):
+            X = torch.tanh(bnorm(conv(X)))
+
+        # frame-by-frame (space only) convolutions
         for conv, bnorm in zip(self.conv_layers, self.conv_bnorms):
             X = torch.tanh(bnorm(conv(X)))
         X = F.avg_pool3d(X, (1, 2, 2))
@@ -90,6 +128,12 @@ class RetinaDecoder(nn.Module):
         X = X.permute(1, 2, 0, 3, 4)  # time to 'depth' dimension
         for trans, bnorm in zip(self.trans_layers, self.trans_bnorms):
             X = torch.tanh(bnorm(trans(X)))
+
+        # clean up with more spatial convs (try interleaving with trans next)
+        # frame-by-frame (space only) convolutions
+        for conv, bnorm in zip(self.post_conv_layers, self.post_conv_bnorms):
+            X = torch.tanh(bnorm(conv(X)))
+
         X = X.permute(2, 0, 1, 3, 4)  # back to (T, N, C, H, w)
 
         return X
@@ -105,7 +149,7 @@ class RetinaDecoder(nn.Module):
         )
         N = train_set.__len__()  # number of samples
 
-        # self.loss = nn.MSELoss().to(device)
+        # DecoderLoss equivalent to MSE when alpha=0
         self.loss = DecoderLoss(alpha=10).to(device)
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
 
@@ -197,7 +241,7 @@ class RetinaDecoder(nn.Module):
             stim = sample['stim'].squeeze().numpy().transpose(1, 2, 0)
 
             # synced scrollable videos of cell actity, decoding, and stimulus
-            fig, ax = plt.subplots(1, 3)
+            fig, ax = plt.subplots(1, 3, figsize=(17, 6))
             net_stack = StackPlotter(ax[0], net, delta=1, vmin=0)
             deco_stack = StackPlotter(ax[1], decoded, delta=1, vmin=-1, vmax=1)
             stim_stack = StackPlotter(ax[2], stim, delta=1, vmin=-1, vmax=1)
@@ -218,6 +262,10 @@ class RetinaDecoder(nn.Module):
 
 def decoder_setup_1():
     decoder = RetinaDecoder(
+        # grouped conv layers: [in, out, (D, H, W), stride, dilation, groups]
+        [
+
+        ],
         # spatial conv layers: [in, out, (D, H, W), stride]
         [
             [15, 64, (1, 3, 3), (1, 1, 1)],
@@ -233,6 +281,10 @@ def decoder_setup_1():
             [64, 32, (1, 3, 3), (1, 2, 2)],
             [32, 1, (1, 3, 3), (1, 2, 2)],
         ],
+        # post conv layers
+        [
+
+        ],
         crnn_cell=crnns.ConvGRUCell_bnorm2,
         learn_initial=False
     )
@@ -241,6 +293,10 @@ def decoder_setup_1():
 
 def decoder_setup_2():
     decoder = RetinaDecoder(
+        # grouped conv layers: [in, out, (D, H, W), stride, dilation, groups]
+        [
+
+        ],
         # spatial conv layers: [in, out, (D, H, W), stride]
         [
             [15, 64, (1, 3, 3), (1, 1, 1)],
@@ -257,6 +313,77 @@ def decoder_setup_2():
             [64, 32, (1, 3, 3), (1, 2, 2)],
             [32, 1, (1, 3, 3), (1, 2, 2)],
         ],
+        # post conv layers
+        [
+
+        ],
+        crnn_cell=crnns.ConvGRUCell_bnorm2,
+        learn_initial=False
+    )
+    return decoder
+
+
+def decoder_setup_3():
+    decoder = RetinaDecoder(
+        # grouped conv layers: [in, out, (D, H, W), stride, dilation, groups]
+        [
+            # these don't work as they are, try with CAUSAL convolutions
+            # [15, 45, (3, 1, 1), (1, 1, 1), (1, 1, 1), 15],
+            # [45, 15, (3, 1, 1), (1, 1, 1), (2, 1, 1), 15],
+        ],
+        # spatial conv layers: [in, out, (D, H, W), stride]
+        [
+            [15, 64, (1, 3, 3), (1, 1, 1)],
+            [64, 128, (1, 3, 3), (1, 1, 1)],
+            [128, 64, (1, 3, 3), (1, 1, 1)],
+        ],
+        # for each ConvRNN cell:
+        # [spatial_dims, in_kernel, out_kernel, in_channels, out_channels]
+        [
+            [(25, 25), (3, 3), (3, 3), 64, 64],
+        ],
+        # ConvTranspose layers: [in, out, (D, H, W), stride]
+        [
+            [64, 32, (1, 3, 3), (1, 2, 2)],
+            [32, 1, (1, 3, 3), (1, 2, 2)],
+        ],
+        # post conv layers
+        [
+
+        ],
+        crnn_cell=crnns.ConvGRUCell_bnorm2,
+        learn_initial=False
+    )
+    return decoder
+
+
+def decoder_setup_4():
+    decoder = RetinaDecoder(
+        # grouped conv layers: [in, out, (D, H, W), stride, dilation, groups]
+        [
+            # these don't work as they are, try with CAUSAL convolutions
+        ],
+        # spatial conv layers: [in, out, (D, H, W), stride]
+        [
+            [15, 64, (1, 3, 3), (1, 1, 1)],
+            [64, 128, (1, 3, 3), (1, 1, 1)],
+            [128, 64, (1, 3, 3), (1, 1, 1)],
+        ],
+        # for each ConvRNN cell:
+        # [spatial_dims, in_kernel, out_kernel, in_channels, out_channels]
+        [
+            [(25, 25), (3, 3), (3, 3), 64, 64],
+        ],
+        # ConvTranspose layers: [in, out, (D, H, W), stride]
+        [
+            [64, 32, (1, 3, 3), (1, 2, 2)],
+            [32, 1, (1, 3, 3), (1, 2, 2)],
+        ],
+        # post conv layers
+        [
+            # [1, 16, (1, 3, 3), (1, 1, 1)],
+            # [16, 1, (1, 1, 1), (1, 1, 1)],
+        ],
         crnn_cell=crnns.ConvGRUCell_bnorm2,
         learn_initial=False
     )
@@ -272,13 +399,16 @@ def main():
     test_set = RetinaVideos(test_path, preload=True, crop_centre=[100, 100])
 
     print('Building model...')
-    decoder = decoder_setup_2()
+    decoder = decoder_setup_1()
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=5, batch_sz=7, print_every=70
+        train_set, test_set, lr=1e-2, epochs=5, batch_sz=4, print_every=80
     )
+    print('Training set examples...')
     decoder.decode(train_set)
+    print('Validation set examples...')
+    decoder.decode(test_set)
 
 
 if __name__ == '__main__':
