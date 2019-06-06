@@ -3,11 +3,12 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.nn.utils import weight_norm
 
 
 def init_filter(shape):
     "Initialize a conv2d filter. Shape (out_channels, in_channels, H, W)."
-    W = torch.randn(*shape).float() / np.sqrt(2.0 / np.prod(shape[1:]))
+    W = torch.empty(*shape).normal_(0, .01)
     return nn.Parameter(W)
 
 
@@ -272,6 +273,91 @@ class ConvGRUCell_bnorm2(nn.Module):
                         reset_gate*hidden, self.Whh, bias=self.bhh,
                         padding=self.out_pad
                     )
+                )
+            )
+            hidden = hidden*update_gate + h_hat*(1 - update_gate)
+            # add hidden state to output sequence
+            out.append(hidden)
+
+        return torch.stack(out, dim=0), hidden
+
+
+class ConvGRUCell_wnorm(nn.Module):
+
+    def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
+                 learn_initial=False):
+        super(ConvGRUCell_wnorm, self).__init__()
+        self.dims = dims  # input spatial dimentions (H, W)
+        self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
+        self.out_kernel = out_kernel  # 2D hidden filter kernel shape (H, W)
+        self.in_channels = in_channels  # number input feature maps
+        self.out_channels = out_channels  # number hidden feature maps
+        self.in_shape = (out_channels, in_channels, *in_kernel)
+        self.out_shape = (out_channels, out_channels, *out_kernel)
+        self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)  # conv padding
+        self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)  # conv padding
+        self.learn_initial = learn_initial  # trainable initial state
+        self.build()
+
+    def build(self):
+        # input weight (transforms X before entering the hidden recurrence)
+        self.Wxh = init_filter(self.in_shape)
+        self.bxh = nn.Parameter(torch.zeros(self.out_channels).float())
+        # hidden weight and bias
+        self.Whh = init_filter(self.out_shape)
+        self.bhh = nn.Parameter(torch.zeros(self.out_channels).float())
+        # update gate weights
+        self.Wxz = init_filter(self.in_shape)
+        self.bxz = nn.Parameter(torch.zeros(self.out_channels).float())
+        self.Whz = init_filter(self.out_shape)
+        self.bhz = nn.Parameter(torch.zeros(self.out_channels).float())
+        # reset gate weights
+        self.Wxr = init_filter(self.in_shape)
+        self.bxr = nn.Parameter(torch.zeros(self.out_channels).float())
+        self.Whr = init_filter(self.out_shape)
+        self.bhr = nn.Parameter(torch.zeros(self.out_channels).float())
+        # initial hidden repesentation
+        self.h0 = nn.Parameter(
+            torch.zeros(self.out_channels, *self.dims).float(),
+            requires_grad=self.learn_initial
+        )
+        # setup weight normalization hooks
+        self.weight_names = [
+            'Wxh', 'bxh', 'Whh', 'bhh', 'Wxz', 'bxz', 'Whz', 'bhz',
+            'Wxr', 'bxr', 'Whr', 'bhr',
+        ]
+        for name in self.weight_names:
+            self = weight_norm(self, name)
+
+    def forward(self, X):
+        """
+        Input shape is (T, batch, C, H, W). Conv2d takes (batch, C, H, W).
+        Loop over T and collect output in list, then stack back up on time
+        dimension. T is not ragged, videos are all the same duration.
+        """
+        out = []
+        # repeat initial hidden state for each sample
+        hidden = self.h0.repeat(X.shape[1], 1, 1, 1)
+        for frame in X:
+            # calculate gates
+            reset_gate = torch.sigmoid(
+                F.conv2d(frame, self.Wxr, bias=self.bxr, padding=self.in_pad)
+                + F.conv2d(
+                    hidden, self.Whr, bias=self.bhr, padding=self.out_pad
+                )
+            )
+            update_gate = torch.sigmoid(
+                F.conv2d(frame, self.Wxz, bias=self.bxz, padding=self.in_pad)
+                + F.conv2d(
+                    hidden, self.Whz, bias=self.bhz, padding=self.out_pad
+                )
+            )
+            # update hidden representation
+            h_hat = torch.tanh(
+                F.conv2d(frame, self.Wxh, bias=self.bxh, padding=self.in_pad)
+                + F.conv2d(
+                    reset_gate*hidden, self.Whh, bias=self.bhh,
+                    padding=self.out_pad
                 )
             )
             hidden = hidden*update_gate + h_hat*(1 - update_gate)
@@ -621,7 +707,7 @@ if __name__ == '__main__':
 
     # generate random data and build Convolutional RNN cells
     data = torch.randn(60, 5, 10, 30, 30)  # (T, N, C, H, W)
-    gru = ConvGRUCell_bnorm2(
+    gru = ConvGRUCell_wnorm(
         (30, 30),  # input dimensions  (H, W)
         (3, 3),  # input weight filter kernel
         (3, 3),  # output weight filter kernel
