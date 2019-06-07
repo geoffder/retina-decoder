@@ -20,6 +20,8 @@ Thoughts:
     to smooth out the blockiness that arises from the upsampling.
 - try using lists of dicts for layer params to try and
     make the model's build() read more clearly.
+- note on ReLU vs Tanh for the temporal convs: black seemed to do great with
+    ReLU for some reason, but white bars were not handled as well as usual.
 """
 
 
@@ -116,9 +118,9 @@ class RetinaDecoder(nn.Module):
         # frame-by-frame (space only) convolutions
         for conv, bnorm in zip(self.conv_layers, self.conv_bnorms):
             X = torch.tanh(bnorm(conv(X)))
-        # X = F.avg_pool3d(X, (1, 2, 2))
+        X = F.avg_pool3d(X, (1, 2, 2))
         # testing! (try max if using ReLU at the start)
-        X = F.max_pool3d(X, (1, 2, 2))
+        # X = F.max_pool3d(X, (1, 2, 2))
 
         if len(self.crnn_stack) > 0:
             # return to time dimension first for operations over time
@@ -159,7 +161,7 @@ class RetinaDecoder(nn.Module):
 
         # DecoderLoss equivalent to MSE when alpha=0
         self.loss = DecoderLoss(alpha=10).to(device)
-        self.optimizer = optim.Adam(self.parameters(), lr=lr)
+        self.optimizer = optim.Adam(self.parameters(), lr=lr, eps=1e-8)
 
         n_batches = N // batch_sz
         train_costs, test_costs = [], []
@@ -366,9 +368,7 @@ def decoder_setup_3():
         [
 
         ],
-        # attempted weight_norm use seems to be causing NaN loss
-        # read up about using in custom modules, might be missing something
-        crnn_cell=crnns.ConvGRUCell_wnorm,
+        crnn_cell=crnns.ConvGRUCell_wnorm,  # weight normalized
         learn_initial=False
     )
     return decoder
@@ -387,7 +387,7 @@ def main():
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=5, batch_sz=4, print_every=80
+        train_set, test_set, lr=1e-2, epochs=8, batch_sz=4, print_every=80
     )
     print('Training set examples...')
     decoder.decode(train_set)
