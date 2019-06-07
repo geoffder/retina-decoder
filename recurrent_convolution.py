@@ -322,10 +322,7 @@ class ConvGRUCell_wnorm(nn.Module):
             requires_grad=self.learn_initial
         )
         # setup weight normalization hooks
-        self.weight_names = [
-            'Wxh', 'bxh', 'Whh', 'bhh', 'Wxz', 'bxz', 'Whz', 'bhz',
-            'Wxr', 'bxr', 'Whr', 'bhr',
-        ]
+        self.weight_names = ['Wxh', 'Whh', 'Wxz', 'Whz', 'Wxr', 'Whr']
         for name in self.weight_names:
             self = weight_norm(self, name)
 
