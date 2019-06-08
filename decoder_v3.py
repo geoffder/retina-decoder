@@ -2,7 +2,7 @@
 import matplotlib.pyplot as plt
 
 import recurrent_convolution as crnns
-from temporal_convolution import TemporalConv3dStack
+from temporal_convolution import TemporalConv3dStack, CausalTranspose3d
 from sim_util import StackPlotter
 
 import torch
@@ -18,19 +18,18 @@ from torch.utils.data import DataLoader
 Thoughts:
 - try regular convolutions after (or interleaved) with transpose convolutions
     to smooth out the blockiness that arises from the upsampling.
-- try using lists of dicts for layer params to try and
-    make the model's build() read more clearly.
-- note on ReLU vs Tanh for the temporal convs: black seemed to do great with
-    ReLU for some reason, but white bars were not handled as well as usual.
+- trying out temporal downsampling paired with upsampling right now. Make sure
+    to explore this before discounting it.
+- think about adding conditionals after each encoder block that will setup
+    pool functions/layers if specified with a param dict {}. Would make it more
+    flexible.
 """
 
 
 class RetinaDecoder(nn.Module):
 
     def __init__(self, grp_tempo_params, conv_params, crnn_cell_params,
-                 temp3d_stack_params,
-                 trans_params, post_conv_params, crnn_cell=crnns.ConvGRUCell,
-                 learn_initial=False):
+                 temp3d_stack_params, trans_params, post_conv_params):
         super(RetinaDecoder, self).__init__()
         # layer parameters
         self.grp_tempo_params = grp_tempo_params
@@ -39,9 +38,6 @@ class RetinaDecoder(nn.Module):
         self.temp3d_stack_params = temp3d_stack_params
         self.trans_params = trans_params
         self.post_conv_params = post_conv_params
-        # ConvRNN settings
-        self.crnn_cell = crnn_cell
-        self.learn_initial = learn_initial
         # create model and send to GPU
         self.build()
         self.to(device)
@@ -49,7 +45,6 @@ class RetinaDecoder(nn.Module):
     def build(self):
         # grouped convolutions
         self.grp_tempo_layers = nn.ModuleList()
-        self.grp_tempo_bnorms = nn.ModuleList()
         # convolutions
         self.conv_layers = nn.ModuleList()
         self.conv_bnorms = nn.ModuleList()
@@ -64,52 +59,73 @@ class RetinaDecoder(nn.Module):
         self.post_conv_layers = nn.ModuleList()
         self.post_conv_bnorms = nn.ModuleList()
 
-        for params in self.grp_tempo_params:
-            # [in, [block_channel(s)], (D, H, W), stride, dilation, groups]
+        for p in self.grp_tempo_params:
             self.grp_tempo_layers.append(
-                TemporalConv3dStack(*params[:-1], activation=params[-1])
-            )
-            # self.grp_conv_bnorms.append(nn.BatchNorm3d(params[1]))
-
-        for params in self.conv_params:
-            # params: [in, out, (kernel), (stride)]
-            pad = (params[2][0]//2, params[2][1]//2, params[2][2]//2)
-            self.conv_layers.append(nn.Conv3d(*params, pad))
-            self.conv_bnorms.append(nn.BatchNorm3d(params[1]))
-
-        for params in self.crnn_cell_params:
-            # params: [(dims), (in_kernel), (out_kernel), in_C, out_C]
-            # recurrenct convolutional cells (GRU or LSTM)
-            self.crnn_stack.append(
-                self.crnn_cell(
-                    *params, learn_initial=self.learn_initial
+                TemporalConv3dStack(
+                    p['in'], p['out'], p.get('kernel', (2, 1, 1)),
+                    p.get('space_dilation', 1), p.get('groups', 1),
+                    p.get('dropout', 0), p.get('activation', nn.ReLU)
                 )
             )
 
-        for params in self.temp3d_stack_params:
+        for p in self.conv_params:
+            d, h, w = p.get('kernel', (1, 3, 3))
+            pad = (d//2, h//2, w//2)
+            self.conv_layers.append(
+                nn.Conv3d(
+                    p['in'], p['out'], (d, h, w), p.get('stride', 1), pad,
+                    p.get('dilation', 1), p.get('groups', 1),
+                    p.get('bias', True)
+                )
+            )
+            self.conv_bnorms.append(nn.BatchNorm3d(p['out']))
+
+        for p in self.crnn_cell_params:
+            # recurrenct convolutional cells (GRU or LSTM)
+            self.crnn_stack.append(
+                p.get('crnn_cell', crnns.ConvGRUCell_wnorm)(
+                    p['dims'], p['in_kernel'], p['out_kernel'], p['in'],
+                    p['out'], p.get('learn_initial', False)
+                )
+            )
+
+        for p in self.temp3d_stack_params:
             self.tempo3d_layers.append(
-                TemporalConv3dStack(*params[:3], activation=params[3])
+                TemporalConv3dStack(
+                    p['in'], p['out'], p.get('kernel', (2, 3, 3)),
+                    p.get('space_dilation', 1), p.get('groups', 1),
+                    p.get('dropout', 0), p.get('activation', nn.ReLU)
+                )
             )
 
-        for params in self.trans_params:
-            pad = (params[2][0]//2, params[2][1]//2, params[2][2]//2)
+        for p in self.trans_params:
             self.trans_layers.append(
-                nn.ConvTranspose3d(*params, padding=pad, output_padding=pad)
+                CausalTranspose3d(
+                    p['in'], p['out'], p['kernel'], p['stride'],
+                    p.get('groups', 1), p.get('bias', True),
+                    p.get('dilations', (1, 1, 1))
+                )
             )
-            self.trans_bnorms.append(nn.BatchNorm3d(params[1]))
+            self.trans_bnorms.append(nn.BatchNorm3d(p['out']))
 
-        for params in self.post_conv_params:
-            # params: [in, out, (kernel), (stride)]
-            pad = (params[2][0]//2, params[2][1]//2, params[2][2]//2)
-            self.post_conv_layers.append(nn.Conv3d(*params, pad))
-            self.post_conv_bnorms.append(nn.BatchNorm3d(params[1]))
+        for p in self.post_conv_params:
+            d, h, w = p.get('kernel', (1, 3, 3))
+            pad = (d//2, h//2, w//2)
+            self.post_conv_layers.append(
+                nn.Conv3d(
+                    p['in'], p['out'], (d, h, w), p.get('stride', 1), pad,
+                    p.get('dilation', 1), p.get('groups', 1),
+                    p.get('bias', True)
+                )
+            )
+            self.post_conv_bnorms.append(nn.BatchNorm3d(p['out']))
 
     def forward(self, X):
         # time to 'depth' dimension
         X = X.permute(1, 2, 0, 3, 4)  # to (N, C, T, H, W)
 
         # reduce spatial dimensionality (collate somatic information)
-        X = F.avg_pool3d(X, (1, 2, 2))
+        X = F.avg_pool3d(X, (1, 2, 2))  # NOTE: reducing time right now!
 
         # grouped (cluster siloed) temporal convolutions
         for tempo_conv in self.grp_tempo_layers:
@@ -118,7 +134,7 @@ class RetinaDecoder(nn.Module):
         # frame-by-frame (space only) convolutions
         for conv, bnorm in zip(self.conv_layers, self.conv_bnorms):
             X = torch.tanh(bnorm(conv(X)))
-        X = F.avg_pool3d(X, (1, 2, 2))
+        X = F.avg_pool3d(X, (2, 2, 2))
         # testing! (try max if using ReLU at the start)
         # X = F.max_pool3d(X, (1, 2, 2))
 
@@ -236,7 +252,9 @@ class RetinaDecoder(nn.Module):
         for i, sample in enumerate(sample_loader):
             with torch.no_grad():
                 # get stimulus prediction from network activity
-                decoded = self.forward(sample['net'].to(device))
+                net = sample['net'].to(device).transpose(0, 1)
+                decoded = self.forward(net)
+                del net
 
             # Reduce out batch and channel dims, then put time last
             # (T, N, C, H, W) -> (H, W, T)
@@ -274,30 +292,30 @@ def decoder_setup_1():
         ],
         # spatial conv layers: [in, out, (D, H, W), stride]
         [
-            [15, 64, (1, 3, 3), (1, 1, 1)],
-            [64, 128, (1, 3, 3), (1, 1, 1)],
-            [128, 64, (1, 3, 3), (1, 1, 1)],
+            {'in': 15, 'out': 64, 'kernel': (1, 3, 3), 'stride': 1},
+            {'in': 64, 'out': 128, 'kernel': (1, 3, 3), 'stride': 1},
+            {'in': 128, 'out': 64, 'kernel': (1, 3, 3), 'stride': 1},
         ],
         # for each ConvRNN cell:
-        # [spatial_dims, in_kernel, out_kernel, in_channels, out_channels]
         [
 
         ],
         # temporal convolution stack(s)
         [
-            [64, [128, 256, 128], (2, 3, 3), nn.Tanh],
+            {
+                'in': 64, 'out': [128, 256, 128], 'kernel': (2, 3, 3),
+                'stride': 1, 'groups': 1, 'acivation': nn.Tanh
+            }
         ],
         # ConvTranspose layers: [in, out, (D, H, W), stride]
         [
-            [128, 64, (1, 3, 3), (1, 2, 2)],
-            [64, 1, (1, 3, 3), (1, 2, 2)],
+            {'in': 128, 'out': 64, 'kernel': (1, 3, 3), 'stride': (1, 2, 2)},
+            {'in': 64, 'out': 1, 'kernel': (1, 3, 3), 'stride': (1, 2, 2)},
         ],
         # post conv layers
         [
 
         ],
-        crnn_cell=crnns.ConvGRUCell_bnorm2,
-        learn_initial=False
     )
     return decoder
 
@@ -305,36 +323,36 @@ def decoder_setup_1():
 def decoder_setup_2():
     decoder = RetinaDecoder(
         # grouped temporal conv stacks:
-        # [in, [block_channel(s)], (D, H, W), stride, dilation, groups]
         [
-            # [15, [45, 45, 15], (2, 1, 1), 1, 15, nn.Tanh]
-            [15, [45, 45, 15], (2, 1, 1), 1, 15, nn.ReLU]
+            {
+                'in': 15, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
+                'stride': 1, 'groups': 15, 'acivation': nn.ReLU
+            }
         ],
         # spatial conv layers: [in, out, (D, H, W), stride]
         [
-            # [15, 64, (1, 3, 3), (1, 1, 1)],
+            # {'in': 15, 'out': 64, 'kernel': (1, 3, 3), 'stride': 1}
         ],
         # for each ConvRNN cell:
-        # [spatial_dims, in_kernel, out_kernel, in_channels, out_channels]
         [
 
         ],
         # temporal convolution stack(s)
         [
-            # [15, [128, 256, 128], (2, 3, 3), nn.Tanh],
-            [15, [128, 256, 128], (2, 3, 3), nn.ReLU],
+            {
+                'in': 15, 'out': [128, 256, 128], 'kernel': (2, 3, 3),
+                'stride': 1, 'groups': 1, 'acivation': nn.ReLU
+            }
         ],
         # ConvTranspose layers: [in, out, (D, H, W), stride]
         [
-            [128, 64, (1, 3, 3), (1, 2, 2)],
-            [64, 1, (1, 3, 3), (1, 2, 2)],
+            {'in': 128, 'out': 64, 'kernel': (3, 3, 3), 'stride': (2, 2, 2)},
+            {'in': 64, 'out': 1, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
         ],
         # post conv layers
         [
-
+            # {'in': 1, 'out': 1, 'kernel': (1, 3, 3), 'stride': 1}
         ],
-        crnn_cell=crnns.ConvGRUCell_bnorm2,
-        learn_initial=False
     )
     return decoder
 
@@ -344,16 +362,22 @@ def decoder_setup_3():
         # grouped temporal conv stacks:
         # [in, [block_channel(s)], (D, H, W), stride, dilation, groups]
         [
-            [15, [45, 45, 15], (2, 1, 1), 1, 15, nn.ReLU]
+            {
+                'in': 15, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
+                'stride': 1, 'groups': 15, 'acivation': nn.ReLU
+            }
         ],
         # spatial conv layers: [in, out, (D, H, W), stride]
         [
-            # [15, 128, (1, 3, 3), (1, 1, 1)],
+            {'in': 15, 'out': 64, 'kernel': (2, 1, 1), 'stride': 1}
         ],
         # for each ConvRNN cell:
-        # [spatial_dims, in_kernel, out_kernel, in_channels, out_channels]
         [
-            [(25, 25), (3, 3), (3, 3), 15, 64],
+            {
+                'cell': crnns.ConvGRUCell_wnorm, 'dims': (25, 25),
+                'in_kernel': (3, 3), 'out_kernel': (3, 3), 'in': 15, 'out': 64,
+                'learn_initial': False
+            }
         ],
         # temporal convolution stack(s)
         [
@@ -361,15 +385,13 @@ def decoder_setup_3():
         ],
         # ConvTranspose layers: [in, out, (D, H, W), stride]
         [
-            [64, 64, (1, 3, 3), (1, 2, 2)],
-            [64, 1, (1, 3, 3), (1, 2, 2)],
+            {'in': 64, 'out': 64, 'kernel': (1, 3, 3), 'stride': (1, 2, 2)},
+            {'in': 64, 'out': 1, 'kernel': (1, 3, 3), 'stride': (1, 2, 2)},
         ],
         # post conv layers
         [
 
         ],
-        crnn_cell=crnns.ConvGRUCell_wnorm,  # weight normalized
-        learn_initial=False
     )
     return decoder
 
@@ -387,7 +409,7 @@ def main():
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=8, batch_sz=4, print_every=80
+        train_set, test_set, lr=1e-2, epochs=10, batch_sz=5, print_every=80
     )
     print('Training set examples...')
     decoder.decode(train_set)
