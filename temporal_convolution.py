@@ -97,8 +97,44 @@ class TemporalConv3dStack(nn.Module):
 
         self.network = nn.Sequential(*blocks)
 
-    def forward(self, x):
-        return self.network(x)
+    def forward(self, X):
+        return self.network(X)
+
+
+class CausalTranspose3d(nn.Module):
+    '''
+    ConvTranspose outputs are GROWN by the kernel rather than shrank, and the
+    padding parameter serves to cancel it out (rather than add to it). Thus
+    to achieve causality in the temporal dimension, depth "anti-padding" is
+    set to 0, and the implicit transpose convolution padding is "chomped" off.
+    '''
+    def __init__(self, in_channels, out_channels, kernel, stride, groups=1,
+                 bias=True, dilation=(1, 1, 1)):
+        super(CausalTranspose3d, self).__init__()
+
+        # unpack tuples for padding calculations
+        d, h, w = kernel
+        st_d, st_h, st_w = stride
+        dil_d, dil_h, dil_w = dilation
+
+        # calculate 'same' padding in spatial dimensions
+        padding = (0, h*dil_h//2, w*dil_w//2)
+        # asymmetrical padding to achieve 'same' dimensions despite upsampling
+        out_padding = (st_d//2, st_h//2, st_w//2)
+
+        self.network = nn.Sequential(
+            nn.ConvTranspose3d(
+                in_channels, out_channels, (d, h, w), (st_d, st_h, st_w),
+                padding, out_padding, groups, bias, dilation,
+            ),
+            # remove all implicit T padding from the end (therefore causal)
+            Chomp3d((d-1)*dil_d)
+        )
+
+    def forward(self, X):
+        return self.network(X)
+
+
 
 
 if __name__ == '__main__':
