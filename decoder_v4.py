@@ -44,12 +44,14 @@ class RetinaDecoder(nn.Module):
         self.to(device)
 
     def build(self):
-        encoder_mods, decoder_mods = [], []
-
         # # # # # # # # # # ENCODER NETWORK # # # # # # # # # #
+        encoder_mods = []
+
+        # pooling operation before any processing
         if 'op' in self.pre_pool:  # skip by leaving param dict empty
             encoder_mods.append(make_pool3d_layer(self.pre_pool))
 
+        # Grouped Temporal CNN, operating on each cluster channel separately
         for p in self.grp_tempo_params:
             encoder_mods.append(
                 TemporalConv3dStack(
@@ -61,6 +63,7 @@ class RetinaDecoder(nn.Module):
             if 'pool' in p:
                 encoder_mods.append(make_pool3d_layer(p['pool']))
 
+        # Spatial Only (non-causal) convolutional layers
         for p in self.conv_params:
             d, h, w = p.get('kernel', (1, 3, 3))
             pad = (d//2, h//2, w//2)
@@ -76,6 +79,7 @@ class RetinaDecoder(nn.Module):
             if 'pool' in p:
                 encoder_mods.append(make_pool3d_layer(p['pool']))
 
+        # Stack of Convolutional Recurrent Network(s)
         if len(self.crnn_cell_params) > 0:
             # swap time from depth dimension to first dimension for CRNN(s)
             # (N, C, T, H, W) -> (T, N, C, H, W)
@@ -96,6 +100,7 @@ class RetinaDecoder(nn.Module):
             # (T, N, C, H, W) -> (N, C, T, H, W)
             encoder_mods.append(Permuter((1, 2, 0, 3, 4)))
 
+        # Temporal CNN
         for p in self.temp3d_stack_params:
             encoder_mods.append(
                 TemporalConv3dStack(
@@ -105,9 +110,13 @@ class RetinaDecoder(nn.Module):
                 )
             )
 
+        # package encoding layers as a Sequential network
         self.encoder_net = nn.Sequential(*encoder_mods)
 
         # # # # # # # # # # DECODER NETWORK # # # # # # # # # #
+        decoder_mods = []
+
+        # Causal Transpose Convolutional layers (upsampling)
         for p in self.trans_params:
             decoder_mods.append(
                 CausalTranspose3d(
@@ -119,6 +128,7 @@ class RetinaDecoder(nn.Module):
             decoder_mods.append(nn.BatchNorm3d(p['out']))
             decoder_mods.append(p.get('activation', nn.Tanh)())
 
+        # Spatial Only (non-causal) convolutional layers
         for p in self.post_conv_params:
             d, h, w = p.get('kernel', (1, 3, 3))
             pad = (d//2, h//2, w//2)
@@ -132,6 +142,7 @@ class RetinaDecoder(nn.Module):
             decoder_mods.append(nn.BatchNorm3d(p['out']))
             decoder_mods.append(p.get('activation', nn.Tanh)())
 
+        # package decoding layers as a Sequential network
         self.decoder_net = nn.Sequential(*decoder_mods)
 
     def forward(self, X):
