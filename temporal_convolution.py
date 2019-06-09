@@ -25,31 +25,31 @@ class TemporalBlock3d(nn.Module):
         super(TemporalBlock3d, self).__init__()
 
         # in_channels -> out_channels convolution, activation, and dropout
-        self.conv1 = weight_norm(
+        conv1 = weight_norm(
             nn.Conv3d(
                 in_channels, out_channels, kernel_size, stride=stride,
                 padding=padding, dilation=dilation, groups=groups
             )
         )
-        self.chomp1 = Chomp3d(padding[0])
-        self.activation1 = activation()
-        self.dropout1 = nn.Dropout(dropout)
+        chomp1 = Chomp3d(padding[0])
+        activation1 = activation()
+        dropout1 = nn.Dropout(dropout)
 
         # out_channels -> out_channels convolution, activation, and dropout
-        self.conv2 = weight_norm(
+        conv2 = weight_norm(
             nn.Conv3d(
                 out_channels, out_channels, kernel_size, stride=stride,
                 padding=padding, dilation=dilation, groups=groups
             )
         )
-        self.chomp2 = Chomp3d(padding[0])
-        self.activation2 = activation()
-        self.dropout2 = nn.Dropout(dropout)
+        chomp2 = Chomp3d(padding[0])
+        activation2 = activation()
+        dropout2 = nn.Dropout(dropout)
 
         # package the main block as a sequential model
-        self.net = nn.Sequential(
-            self.conv1, self.chomp1, self.activation1, self.dropout1,
-            self.conv2, self.chomp2, self.activation2, self.dropout2
+        self.main_branch = nn.Sequential(
+            conv1, chomp1, activation1, dropout1,
+            conv2, chomp2, activation2, dropout2
         )
 
         # 1x1x1 kernel convolution to adjust dimensionality of skip connection
@@ -62,14 +62,14 @@ class TemporalBlock3d(nn.Module):
 
     def init_weights(self):
         "Re-initialize weight standard deviation; 0.1 -> .01"
-        self.conv1.weight.data.normal_(0, 0.01)
-        self.conv2.weight.data.normal_(0, 0.01)
+        self.main_branch[0].weight.data.normal_(0, 0.01)  # conv1
+        self.main_branch[4].weight.data.normal_(0, 0.01)  # conv2
         if self.downsample is not None:
             self.downsample.weight.data.normal_(0, 0.01)
 
     def forward(self, X):
         "Residual connection dimensionality reduced/increased to match main."
-        out = self.net(X)
+        out = self.main_branch(X)
         res = X if self.downsample is None else self.downsample(X)
         return self.activation(out + res)
 
@@ -133,8 +133,6 @@ class CausalTranspose3d(nn.Module):
 
     def forward(self, X):
         return self.network(X)
-
-
 
 
 if __name__ == '__main__':
