@@ -1,5 +1,7 @@
-# import numpy as np
+import numpy as np
 import matplotlib.pyplot as plt
+
+import os
 
 import recurrent_convolution as crnns
 from temporal_convolution import TemporalConv3dStack, CausalTranspose3d
@@ -165,7 +167,7 @@ class RetinaDecoder(nn.Module):
         return X
 
     def fit(self, train_set, test_set, lr=1e-4, epochs=10, batch_sz=1,
-            print_every=40):
+            loss_alpha=10, print_every=40):
 
         train_loader = DataLoader(
             train_set, batch_size=batch_sz, shuffle=True, num_workers=2
@@ -175,8 +177,8 @@ class RetinaDecoder(nn.Module):
         )
         N = train_set.__len__()  # number of samples
 
-        # DecoderLoss equivalent to MSE when alpha=0
-        self.loss = DecoderLoss(alpha=10).to(device)
+        # DecoderLoss equivalent to MSE when alpha=0 (original default: 10)
+        self.loss = DecoderLoss(alpha=loss_alpha).to(device)
         self.optimizer = optim.Adam(self.parameters(), lr=lr, eps=1e-8)
 
         n_batches = N // batch_sz
@@ -282,45 +284,45 @@ class RetinaDecoder(nn.Module):
             if again == 'n':
                 break
 
+    def save_decodings(self, sample_set):
+        self.eval()  # set the model to testing mode
+        sample_loader = DataLoader(sample_set, batch_size=1, num_workers=2)
+
+        while True:
+            nametag = input("Decoding set name: ")
+            basefold = os.path.join(sample_set.root_dir, nametag)
+            if not os.path.isdir(basefold):
+                os.mkdir(basefold)
+                break
+            else:
+                print('Folder exists, provide another name...')
+
+        for i, sample in enumerate(sample_loader):
+            with torch.no_grad():
+                # get stimulus prediction from network activity
+                net = sample['net'].to(device).transpose(0, 1)
+                decoded = self.forward(net)
+                del sample, net
+
+            # Reduce out batch and channel dims
+            # (T, N, C, H, W) -> (T, H, W)
+            decoded = decoded.squeeze().cpu().numpy()
+
+            # save into subfolder corresponding to originating network
+            decofold = os.path.join(
+                basefold, sample_set.rec_frame.iloc[i, 0],  # net folder name
+            )
+            if not os.path.isdir(decofold):
+                os.mkdir(decofold)
+            np.save(
+                # file name corresponding to stimulus
+                os.path.join(decofold, sample_set.rec_frame.iloc[i, 1]),
+                decoded
+            )
+
 
 def decoder_setup_1():
-    decoder = RetinaDecoder(
-        # grouped temporal conv stacks:
-        # [in, [block_channel(s)], (D, H, W), stride, dilation, groups]
-        [
-
-        ],
-        # spatial conv layers: [in, out, (D, H, W), stride]
-        [
-            {'in': 15, 'out': 64, 'kernel': (1, 3, 3), 'stride': 1},
-            {'in': 64, 'out': 128, 'kernel': (1, 3, 3), 'stride': 1},
-            {'in': 128, 'out': 64, 'kernel': (1, 3, 3), 'stride': 1},
-        ],
-        # for each ConvRNN cell:
-        [
-
-        ],
-        # temporal convolution stack(s)
-        [
-            {
-                'in': 64, 'out': [128, 256, 128], 'kernel': (2, 3, 3),
-                'stride': 1, 'groups': 1, 'acivation': nn.Tanh
-            }
-        ],
-        # ConvTranspose layers: [in, out, (D, H, W), stride]
-        [
-            {'in': 128, 'out': 64, 'kernel': (1, 3, 3), 'stride': (1, 2, 2)},
-            {'in': 64, 'out': 1, 'kernel': (1, 3, 3), 'stride': (1, 2, 2)},
-        ],
-        # post conv layers
-        [
-
-        ],
-    )
-    return decoder
-
-
-def decoder_setup_2():
+    "Playing with spatial convs after transpose convolutions."
     decoder = RetinaDecoder(
         # grouped temporal conv stacks:
         [
@@ -347,17 +349,57 @@ def decoder_setup_2():
         # ConvTranspose layers: [in, out, (D, H, W), stride]
         [
             {'in': 128, 'out': 64, 'kernel': (3, 3, 3), 'stride': (2, 2, 2)},
+            {'in': 64, 'out': 16, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
+        ],
+        # post conv layers
+        [
+            {'in': 16, 'out': 8, 'kernel': (1, 3, 3), 'stride': 1},
+            {'in': 8, 'out': 1, 'kernel': (1, 1, 1), 'stride': 1}
+        ],
+    )
+    return decoder
+
+
+def decoder_setup_2():
+    "This setup was the first big success, solid base config to work from."
+    decoder = RetinaDecoder(
+        # grouped temporal conv stacks:
+        [
+            {
+                'in': 15, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
+                'stride': 1, 'groups': 15, 'acivation': nn.ReLU
+            }
+        ],
+        # spatial conv layers: [in, out, (D, H, W), stride]
+        [
+
+        ],
+        # for each ConvRNN cell:
+        [
+
+        ],
+        # temporal convolution stack(s)
+        [
+            {
+                'in': 15, 'out': [128, 256, 128], 'kernel': (2, 3, 3),
+                'stride': 1, 'groups': 1, 'acivation': nn.ReLU
+            }
+        ],
+        # ConvTranspose layers: [in, out, (D, H, W), stride]
+        [
+            {'in': 128, 'out': 64, 'kernel': (3, 3, 3), 'stride': (2, 2, 2)},
             {'in': 64, 'out': 1, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
         ],
         # post conv layers
         [
-            # {'in': 1, 'out': 1, 'kernel': (1, 3, 3), 'stride': 1}
+
         ],
     )
     return decoder
 
 
 def decoder_setup_3():
+    "Token Conv RNN build."
     decoder = RetinaDecoder(
         # grouped temporal conv stacks:
         # [in, [block_channel(s)], (D, H, W), stride, dilation, groups]
@@ -409,12 +451,19 @@ def main():
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=10, batch_sz=5, print_every=80
+        train_set, test_set, lr=1e-2, epochs=10, batch_sz=4, print_every=80,
+        loss_alpha=10
     )
+
     print('Training set examples...')
     decoder.decode(train_set)
     print('Validation set examples...')
     decoder.decode(test_set)
+
+    if 'n' not in input("Save training set decodings? (y/n): "):
+        decoder.save_decodings(train_set)
+    if 'n' not in input("Save validation set decodings? (y/n): "):
+        decoder.save_decodings(test_set)
 
 
 if __name__ == '__main__':
