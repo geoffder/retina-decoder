@@ -15,7 +15,7 @@ def init_filter(shape):
 class ConvGRUCell(nn.Module):
 
     def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
-                 learn_initial=False):
+                 learn_initial=False, return_hidden=False):
         super(ConvGRUCell, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -27,6 +27,7 @@ class ConvGRUCell(nn.Module):
         self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)  # conv padding
         self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)  # conv padding
         self.learn_initial = learn_initial  # trainable initial state
+        self.return_hidden = return_hidden  # returns (output, hidden)
         self.build()
 
     def build(self):
@@ -87,13 +88,16 @@ class ConvGRUCell(nn.Module):
             # add hidden state to output sequence
             out.append(hidden)
 
-        return torch.stack(out, dim=0), hidden
+        if self.return_hidden:
+            return torch.stack(out, dim=0), hidden
+        else:
+            return torch.stack(out, dim=0)
 
 
 class ConvGRUCell_bnorm(nn.Module):
 
     def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
-                 learn_initial=False):
+                 learn_initial=False, return_hidden=False):
         super(ConvGRUCell_bnorm, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -105,6 +109,7 @@ class ConvGRUCell_bnorm(nn.Module):
         self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)  # conv padding
         self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)  # conv padding
         self.learn_initial = learn_initial  # trainable initial state
+        self.return_hidden = return_hidden  # returns (output, hidden)
         self.build()
 
     def build(self):
@@ -168,13 +173,16 @@ class ConvGRUCell_bnorm(nn.Module):
             # add hidden state to output sequence
             out.append(hidden)
 
-        return torch.stack(out, dim=0), hidden
+        if self.return_hidden:
+            return torch.stack(out, dim=0), hidden
+        else:
+            return torch.stack(out, dim=0)
 
 
 class ConvGRUCell_bnorm2(nn.Module):
 
     def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
-                 learn_initial=False):
+                 learn_initial=False, return_hidden=False):
         super(ConvGRUCell_bnorm2, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -186,6 +194,7 @@ class ConvGRUCell_bnorm2(nn.Module):
         self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)  # conv padding
         self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)  # conv padding
         self.learn_initial = learn_initial  # trainable initial state
+        self.return_hidden = return_hidden  # returns (output, hidden)
         self.build()
 
     def build(self):
@@ -279,13 +288,16 @@ class ConvGRUCell_bnorm2(nn.Module):
             # add hidden state to output sequence
             out.append(hidden)
 
-        return torch.stack(out, dim=0), hidden
+        if self.return_hidden:
+            return torch.stack(out, dim=0), hidden
+        else:
+            return torch.stack(out, dim=0)
 
 
 class ConvGRUCell_wnorm(nn.Module):
 
     def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
-                 learn_initial=False):
+                 learn_initial=False, return_hidden=False):
         super(ConvGRUCell_wnorm, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -297,6 +309,7 @@ class ConvGRUCell_wnorm(nn.Module):
         self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)  # conv padding
         self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)  # conv padding
         self.learn_initial = learn_initial  # trainable initial state
+        self.return_hidden = return_hidden  # returns (output, hidden)
         self.build()
 
     def build(self):
@@ -361,13 +374,16 @@ class ConvGRUCell_wnorm(nn.Module):
             # add hidden state to output sequence
             out.append(hidden)
 
-        return torch.stack(out, dim=0), hidden
+        if self.return_hidden:
+            return torch.stack(out, dim=0), hidden
+        else:
+            return torch.stack(out, dim=0)
 
 
 class ConvLSTMCell1(nn.Module):
     "Similar to Pytorch LSTM."
     def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
-                 learn_initial=False):
+                 learn_initial=False, return_hidden=False):
         super(ConvLSTMCell1, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -379,6 +395,7 @@ class ConvLSTMCell1(nn.Module):
         self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)  # conv padding
         self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)  # conv padding
         self.learn_initial = learn_initial  # trainable initial state
+        self.return_hidden = return_hidden  # returns (output, hidden)
         self.build()
 
     def build(self):
@@ -456,13 +473,16 @@ class ConvLSTMCell1(nn.Module):
             # add hidden state to output sequence
             out.append(hidden)
 
-        return torch.stack(out, dim=0), (hidden, cell)
+        if self.return_hidden:
+            return torch.stack(out, dim=0), (hidden, cell)
+        else:
+            return torch.stack(out, dim=0)
 
 
 class ConvLSTMCell2(nn.Module):
     "Based on Shi 2016"
     def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
-                 learn_initial=False):
+                 learn_initial=False, return_hidden=False):
         super(ConvLSTMCell2, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -474,6 +494,7 @@ class ConvLSTMCell2(nn.Module):
         self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)  # conv padding
         self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)  # conv padding
         self.learn_initial = learn_initial  # trainable initial state
+        self.return_hidden = return_hidden  # returns (output, hidden)
         self.build()
 
     def build(self):
@@ -554,13 +575,16 @@ class ConvLSTMCell2(nn.Module):
             # add hidden state to output sequence
             out.append(hidden)
 
-        return torch.stack(out, dim=0), (hidden, cell)
+        if self.return_hidden:
+            return torch.stack(out, dim=0), (hidden, cell)
+        else:
+            return torch.stack(out, dim=0)
 
 
 class ConvLSTMCell2_bnorm(nn.Module):
     "Based on Shi 2016, with batchnorm added."
     def __init__(self, dims, in_kernel, out_kernel, in_channels, out_channels,
-                 learn_initial=False):
+                 learn_initial=False, return_hidden=False):
         super(ConvLSTMCell2_bnorm, self).__init__()
         self.dims = dims  # input spatial dimentions (H, W)
         self.in_kernel = in_kernel  # 2D input filter kernel shape (H, W)
@@ -572,6 +596,7 @@ class ConvLSTMCell2_bnorm(nn.Module):
         self.in_pad = (in_kernel[0]//2, in_kernel[1]//2)  # conv padding
         self.out_pad = (out_kernel[0]//2, out_kernel[1]//2)  # conv padding
         self.learn_initial = learn_initial  # trainable initial state
+        self.return_hidden = return_hidden  # returns (output, hidden)
         self.build()
 
     def build(self):
@@ -694,7 +719,10 @@ class ConvLSTMCell2_bnorm(nn.Module):
             # add hidden state to output sequence
             out.append(hidden)
 
-        return torch.stack(out, dim=0), (hidden, cell)
+        if self.return_hidden:
+            return torch.stack(out, dim=0), (hidden, cell)
+        else:
+            return torch.stack(out, dim=0)
 
 
 if __name__ == '__main__':
