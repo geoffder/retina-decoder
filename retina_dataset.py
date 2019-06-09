@@ -10,11 +10,13 @@ from torch.utils.data import Dataset
 class RetinaVideos(Dataset):
     """Cluster encoded ganglion network and stimulus video Dataset."""
 
-    def __init__(self, root_dir, preload=False, crop_centre=None):
+    def __init__(self, root_dir, preload=False, crop_centre=None,
+                 time_first=True):
         self.root_dir = root_dir
         self.rec_frame = self.build_lookup(root_dir)
         self.preload = preload
         self.crop_centre = crop_centre
+        self.time_first = time_first  # whether time is first dim, or depth
         if preload:  # load data that is common across samples to memory
             self.all_masks, self.all_stims = self.preloader()
 
@@ -100,8 +102,10 @@ class RetinaVideos(Dataset):
         # keep stimulus in -1 to 1 range (max contrasts of black/white)
         stim = stim.clip(-1, 1)
 
-        # Take shape (TxHxW) and encode to (TxCxHxW) with C cluster masks
-        rec = np.stack([rec*mask for mask in masks], axis=1)
+        # Take shape (TxHxW) and encode with C cluster masks to (TxCxHxW) if
+        # time_first, or (CxTxHxW) if not
+        channel_dim = 1 if self.time_first else 0
+        rec = np.stack([rec*mask for mask in masks], axis=channel_dim)
 
         # convert to torch Tensors
         rec = torch.from_numpy(rec).float()
