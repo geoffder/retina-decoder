@@ -127,7 +127,7 @@ class RetinaDecoder(nn.Module):
         X = X.permute(1, 2, 0, 3, 4)  # to (N, C, T, H, W)
 
         # reduce spatial dimensionality (collate somatic information)
-        X = F.avg_pool3d(X, (1, 2, 2))  # NOTE: reducing time right now!
+        X = F.avg_pool3d(X, (1, 2, 2))
 
         # grouped (cluster siloed) temporal convolutions
         for tempo_conv in self.grp_tempo_layers:
@@ -146,7 +146,9 @@ class RetinaDecoder(nn.Module):
 
             # stacked convolutional recurrent cells
             for cell in self.crnn_stack:
-                X, _ = cell(X)
+                X = cell(X)
+
+            X = F.relu(X)  # test
 
             # expand back out in space and reduce channels
             X = X.permute(1, 2, 0, 3, 4)  # time to 'depth' dimension
@@ -411,7 +413,7 @@ def decoder_setup_3():
         ],
         # spatial conv layers: [in, out, (D, H, W), stride]
         [
-            {'in': 15, 'out': 64, 'kernel': (2, 1, 1), 'stride': 1}
+            # {'in': 15, 'out': 64, 'kernel': (2, 1, 1), 'stride': 1}
         ],
         # for each ConvRNN cell:
         [
@@ -427,8 +429,8 @@ def decoder_setup_3():
         ],
         # ConvTranspose layers: [in, out, (D, H, W), stride]
         [
-            {'in': 64, 'out': 64, 'kernel': (1, 3, 3), 'stride': (1, 2, 2)},
-            {'in': 64, 'out': 1, 'kernel': (1, 3, 3), 'stride': (1, 2, 2)},
+            {'in': 64, 'out': 64, 'kernel': (3, 3, 3), 'stride': (2, 2, 2)},
+            {'in': 64, 'out': 1, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
         ],
         # post conv layers
         [
