@@ -446,6 +446,15 @@ def main():
     print('Building model...')
     decoder = decoder_setup_2()
 
+    # from torch.utils.tensorboard import SummaryWriter
+    # writer = SummaryWriter()
+    # writer.add_graph(
+    #     decoder, next(iter((
+    #         DataLoader(train_set)
+    #     )))['net'].to(device)
+    #  )
+    # writer.close()
+
     print('Fitting model...')
     decoder.fit(
         train_set, test_set, lr=1e-2, epochs=10, batch_sz=4, print_every=80,
