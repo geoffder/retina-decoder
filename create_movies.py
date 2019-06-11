@@ -269,12 +269,17 @@ def package_experiment(folder, exp_name, downsample=1, space_redux=1):
     db.close()
 
 
-def movie_giffer(fname, vid, max_val=None, downsample=1):
+def movie_giffer(fname, vid, max_val=None, downsample=1, time_first=True,
+                 ext='.gif', timestep=40):
     """
-    Takes desired filename (without '.gif') and a numpy matrix
-    (in H x W x Frames organization right now) and saves it as a GIF using
-    the PIL.Image module.
+    Takes desired filename (without extension) and a numpy matrix and saves it
+    as a GIF (or as .tif if ext specified) using the PIL.Image module.
+    If time_first indicates if matrix is in (T, H, W) format already, if not
+    it will be transposed to make it so.
     """
+    if not time_first:
+        vid = vid.transpose(2, 0, 1)
+
     # normalize and save as gif
     if max_val is None:
         vid = (vid/vid.max()*255).clip(0, 255).astype(np.uint8)
@@ -284,8 +289,8 @@ def movie_giffer(fname, vid, max_val=None, downsample=1):
         Image.fromarray(vid[i*downsample], mode='P')
         for i in range(int(vid.shape[0]/downsample))
     ]
-    frames[0].save(fname+'.tif', save_all=True, append_images=frames[1:],
-                   duration=40, loop=0, optimize=False)
+    frames[0].save(fname+ext, save_all=True, append_images=frames[1:],
+                   duration=timestep, loop=0, optimize=False, pallete='I')
 
 
 def test_gifs(stim):
@@ -300,7 +305,7 @@ def test_gifs(stim):
     max_val = np.max([net.max() for net in nets])  # for normalization
     progress = ProgressBar(len(nets))
     for name, net in zip(stim_names, nets):
-        movie_giffer(datapath+'net_'+name, net, max_val)
+        movie_giffer(datapath+'net_'+name, net, max_val, ext='tif')
         progress.step()
     del net_pckg, nets  # free up the memory
 
@@ -310,7 +315,7 @@ def test_gifs(stim):
     print('Giffing stimuli movies...')
     progress = ProgressBar(len(stims))
     for name, stim in zip(stim_names, stims):
-        movie_giffer(datapath+'stim_'+name, stim)
+        movie_giffer(datapath+'stim_'+name, stim, ext='tif')
         progress.step()
 
 
@@ -373,6 +378,43 @@ def build_folder_dataset(basepath, folder, downsample=1, space_redux=1):
         progress.step()
 
 
+def example_gifs(dataset_path, net_name, stim_name, decoding_fldr):
+    # load numpy files for network recording, stimulus, and decoding
+    rec = crop(np.load(
+        os.path.join(dataset_path, net_name, 'cells', stim_name+'.npy')
+    ), [100, 100])
+    stim = crop(np.load(
+        os.path.join(dataset_path, 'stims', stim_name+'.npy')
+    ), [100, 100])
+    decoding = np.load(
+        os.path.join(dataset_path, decoding_fldr, net_name, stim_name+'.npy')
+    )
+
+    # normalize stim and decodings (they are on -1 to 1 scale)
+    stim = ((stim + 1) / 2)
+    decoding = (decoding + 1) / 2
+    # dirty hack to allow background to be grey.
+    stim[-1, 0, 0], stim[-1, 0, 0] = 0, 1
+    decoding[-1, 0, 0], decoding[-1, 0, 0] = 0, 1
+
+    # make folder if it doesn't exist
+    gif_path = os.path.join(dataset_path, decoding_fldr, net_name, 'gifs')
+    if not os.path.isdir(gif_path):
+        os.mkdir(gif_path)
+
+    # create gifs for recording, stimulus, decoding triplet
+    for vid, name in zip([rec, stim, decoding], ['net', 'stim', 'decoding']):
+        pth = os.path.join(gif_path, name+'_'+stim_name)
+        movie_giffer(pth, vid, timestep=100)
+
+
+def crop(matrix, sz):
+    "Take (_, H, W) matrix and crop centre of spatial dimensions."
+    ox, oy = np.array(matrix.shape[1:]) // 2
+    x, y = np.array(sz) // 2
+    return matrix[:, ox-x:ox+x, oy-y:oy+y]
+
+
 if __name__ == '__main__':
     datapath = 'D:/retina-sim-data/second/'
 
@@ -381,6 +423,10 @@ if __name__ == '__main__':
     # )
     # test_gifs('med_light_bar')
 
-    build_folder_dataset(
-        datapath, 'video_dataset/', downsample=10, space_redux=4
-    )
+    # build_folder_dataset(
+    #     datapath, 'video_dataset/', downsample=10, space_redux=4
+    # )
+
+    # datapath += 'test_video_dataset/'
+    # decoding_path = 'postconv_lr3_epoch20'
+    # example_gifs(datapath, 'net13', 'thick_dark_bar0', decoding_path)
