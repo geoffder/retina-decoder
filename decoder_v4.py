@@ -22,6 +22,13 @@ Thoughts:
 - try regular convolutions after (or interleaved) with transpose convolutions
     to smooth out the blockiness that arises from the upsampling. Have not
     tried interleaved yet.
+- test out a DecoderLoss alpha scheduling scheme. e.g. Update alpha penalty
+    during fitting as a function of epoch. (Decrease over time to become more
+    like regular MSE loss).
+- also, scale the calculated loss up by how much alpha has decreased, since
+    decaying alpha will decrease loss on it's own.
+    out = mean(loss) * start_alpha/current_alpha
+    There is probably a better equation, but this gets at the idea...
 """
 
 
@@ -188,6 +195,9 @@ class RetinaDecoder(nn.Module):
 
                     print("cost: %f" % (test_cost))
 
+            # Decay DecoderLoss sparsity penalty
+            self.loss.alpha *= .85
+
             # for plotting
             train_costs.append(cost / n_batches)
             test_costs.append(test_cost)
@@ -309,13 +319,13 @@ def decoder_setup_1():
     "Playing with spatial convs after transpose convolutions."
     decoder = RetinaDecoder(
         # pre-pooling
-        {'op': 'avg', 'kernel': (1, 2, 2), 'causal': False},
+        {'op': 'avg', 'kernel': (1, 2, 2), 'causal': True},
         # grouped temporal conv stacks:
         [
             {
                 'in': 15, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
                 'stride': 1, 'groups': 15, 'acivation': nn.ReLU,
-                'pool': {'op': 'avg', 'kernel': (2, 2, 2), 'causal': False}
+                'pool': {'op': 'avg', 'kernel': (2, 2, 2), 'causal': True}
             }
         ],
         # spatial conv layers: [in, out, (D, H, W), stride]
@@ -485,7 +495,7 @@ def main():
     )
 
     print('Building model...')
-    decoder = decoder_setup_2()
+    decoder = decoder_setup_1()
 
     # from torch.utils.tensorboard import SummaryWriter
     # writer = SummaryWriter()
@@ -498,7 +508,7 @@ def main():
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=10, batch_sz=4, print_every=80,
+        train_set, test_set, lr=1e-2, epochs=20, batch_sz=4, print_every=80,
         loss_alpha=10
     )
 
