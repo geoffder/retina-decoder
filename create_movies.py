@@ -404,7 +404,9 @@ def example_gifs(dataset_path, net_name, stim_name, decoding_fldr):
 
     # create gifs for recording, stimulus, decoding triplet
     for vid, name in zip([rec, stim, decoding], ['net', 'stim', 'decoding']):
-        pth = os.path.join(gif_path, name+'_'+stim_name)
+        if not os.path.isdir(os.path.join(gif_path, stim_name)):
+            os.mkdir(os.path.join(gif_path, stim_name))
+        pth = os.path.join(gif_path, stim_name, name)
         movie_giffer(pth, vid, timestep=100)
 
 
@@ -427,6 +429,11 @@ if __name__ == '__main__':
     #     datapath, 'video_dataset/', downsample=10, space_redux=4
     # )
 
-    # datapath += 'test_video_dataset/'
-    # decoding_path = 'postconv_lr3_epoch20'
-    # example_gifs(datapath, 'net13', 'thick_dark_bar0', decoding_path)
+    datapath += 'test_video_dataset/'
+    decoding_path = 'postconv_decay85e-2_biteoffset_epoch20'
+    stims = [
+        'thick_dark_bar0', 'med_dark_bar135', 'med_light_bar180',
+        'thick_light_bar45', 'thin_dark_bar315', 'thin_light_bar270'
+    ]
+    for stim in stims:
+        example_gifs(datapath, 'net14', stim, decoding_path)
