@@ -1,6 +1,7 @@
 # import torch
 from torch import nn
 # import torch.nn.functional as F
+from temporal_convolution import CausalPool3d
 
 
 class Permuter(nn.Module):
@@ -19,6 +20,12 @@ def make_pool3d_layer(param_dict):
         param_dict.get('padding', 0)
     )
     if param_dict.get('op', 'avg') == 'max':
-        return nn.MaxPool3d(*params)
+        if not param_dict.get('causal', False):
+            return nn.MaxPool3d(*params)
+        else:
+            return CausalPool3d('max', *params[:-1])
     else:
-        return nn.AvgPool3d(*params)
+        if not param_dict.get('causal', False):
+            return nn.AvgPool3d(*params)
+        else:
+            return CausalPool3d('avg', *params[:-1])

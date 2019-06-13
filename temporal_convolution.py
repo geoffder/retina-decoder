@@ -13,15 +13,21 @@ class Chomp3d(nn.Module):
     def __init__(self, chomp_size):
         super(Chomp3d, self).__init__()
         self.chomp_size = chomp_size
+        # Select forward() method. (Do nothing if chomp_size is 0)
+        self.forward = self.chomp if chomp_size else self.skip
 
-    def forward(self, X):
+    def chomp(self, X):
+        "Usual forward operation."
         return X[:, :, :-self.chomp_size, :, :].contiguous()
+
+    def skip(self, X):
+        "Don't try to chomp, [:-0] results in a terminal error."
+        return X
 
 
 class TemporalBlock3d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size,
-                 stride, dilation, padding, groups=1, dropout=0,
-                 activation=nn.ReLU):
+    def __init__(self, in_channels, out_channels, kernel_size, stride,
+                 dilation, padding, groups=1, dropout=0, activation=nn.ReLU):
         super(TemporalBlock3d, self).__init__()
 
         # in_channels -> out_channels convolution, activation, and dropout
@@ -135,6 +141,31 @@ class CausalTranspose3d(nn.Module):
         return self.network(X)
 
 
+class CausalPool3d(nn.Module):
+    '''
+    Provides causal padding for 3d pooling operations (op='avg' or 'max').
+    No padding in spatial, usual pooling convention is only deviated from in
+    the temporal dimension.
+    '''
+    def __init__(self, op, kernel, stride=None):
+        super(CausalPool3d, self).__init__()
+
+        stride = kernel if stride is None else stride
+        padding = (kernel[0]-1, 0, 0)  # Causal padding in time.
+
+        if op == 'avg':
+            pool = nn.AvgPool3d(
+                kernel, stride, padding, count_include_pad=False
+            )
+        elif op == 'max':
+            pool = nn.MaxPool3d(kernel, stride, padding)
+
+        self.network = nn.Sequential(pool, Chomp3d(padding[0]))
+
+    def forward(self, X):
+        return self.network(X)
+
+
 if __name__ == '__main__':
     # use GPU if available.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -154,6 +185,10 @@ if __name__ == '__main__':
 
     # run data through Temporal Convolution network
     out = tcnn(data)
+
+    # causal pooling
+    pool = CausalPool3d('avg', (2, 2, 2)).to(device)
+    out = pool(out)
 
     # convert data and outputs into numpy
     data = data.detach().cpu().numpy()

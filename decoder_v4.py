@@ -309,13 +309,13 @@ def decoder_setup_1():
     "Playing with spatial convs after transpose convolutions."
     decoder = RetinaDecoder(
         # pre-pooling
-        {'op': 'avg', 'kernel': (1, 2, 2)},
+        {'op': 'avg', 'kernel': (1, 2, 2), 'causal': False},
         # grouped temporal conv stacks:
         [
             {
                 'in': 15, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
                 'stride': 1, 'groups': 15, 'acivation': nn.ReLU,
-                'pool': {'op': 'avg', 'kernel': (2, 2, 2)}
+                'pool': {'op': 'avg', 'kernel': (2, 2, 2), 'causal': False}
             }
         ],
         # spatial conv layers: [in, out, (D, H, W), stride]
@@ -351,13 +351,13 @@ def decoder_setup_2():
     "This setup was the first big success, solid base config to work from."
     decoder = RetinaDecoder(
         # pre-pooling
-        {'op': 'avg', 'kernel': (1, 2, 2)},
+        {'op': 'avg', 'kernel': (1, 2, 2), 'causal': False},
         # grouped temporal conv stacks:
         [
             {
                 'in': 15, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
                 'stride': 1, 'groups': 15, 'acivation': nn.ReLU,
-                'pool': {'op': 'avg', 'kernel': (2, 2, 2)}
+                'pool': {'op': 'avg', 'kernel': (2, 2, 2), 'causal': False}
             }
         ],
         # spatial conv layers: [in, out, (D, H, W), stride]
@@ -389,6 +389,47 @@ def decoder_setup_2():
 
 
 def decoder_setup_3():
+    "Test lack of temporal downsampling."
+    decoder = RetinaDecoder(
+        # pre-pooling
+        {'op': 'avg', 'kernel': (1, 2, 2)},
+        # grouped temporal conv stacks:
+        [
+            {
+                'in': 15, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
+                'stride': 1, 'groups': 15, 'acivation': nn.ReLU,
+                'pool': {'op': 'avg', 'kernel': (1, 2, 2)}
+            }
+        ],
+        # spatial conv layers: [in, out, (D, H, W), stride]
+        [
+
+        ],
+        # for each ConvRNN cell:
+        [
+
+        ],
+        # temporal convolution stack(s)
+        [
+            {
+                'in': 15, 'out': [128, 256, 128], 'kernel': (2, 3, 3),
+                'stride': 1, 'groups': 1, 'acivation': nn.ReLU
+            }
+        ],
+        # ConvTranspose layers: [in, out, (D, H, W), stride]
+        [
+            {'in': 128, 'out': 64, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
+            {'in': 64, 'out': 1, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
+        ],
+        # post conv layers
+        [
+
+        ],
+    )
+    return decoder
+
+
+def decoder_setup_4():
     "Token Conv RNN build."
     decoder = RetinaDecoder(
         # pre-pooling
