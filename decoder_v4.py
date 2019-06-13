@@ -25,8 +25,8 @@ Thoughts:
 - test out a DecoderLoss alpha scheduling scheme. e.g. Update alpha penalty
     during fitting as a function of epoch. (Decrease over time to become more
     like regular MSE loss).
-- also, scale the calculated loss up by how much alpha has decreased, since
-    decaying alpha will decrease loss on it's own.
+- also, scale the calculated loss up by a function of how much alpha has
+    decreased, since decaying alpha will decrease loss on it's own.
     out = mean(loss) * start_alpha/current_alpha
     There is probably a better equation, but this gets at the idea...
 """
@@ -158,7 +158,7 @@ class RetinaDecoder(nn.Module):
         return X
 
     def fit(self, train_set, test_set, lr=1e-4, epochs=10, batch_sz=1,
-            loss_alpha=10, print_every=40):
+            loss_alpha=10, loss_decay=1, print_every=40):
 
         train_loader = DataLoader(
             train_set, batch_size=batch_sz, shuffle=True, num_workers=2
@@ -169,7 +169,7 @@ class RetinaDecoder(nn.Module):
         N = train_set.__len__()  # number of samples
 
         # DecoderLoss equivalent to MSE when alpha=0 (original default: 10)
-        self.loss = DecoderLoss(alpha=loss_alpha).to(device)
+        self.loss = DecoderLoss(alpha=loss_alpha, decay=loss_decay).to(device)
         self.optimizer = optim.Adam(self.parameters(), lr=lr, eps=1e-8)
 
         n_batches = N // batch_sz
@@ -196,7 +196,7 @@ class RetinaDecoder(nn.Module):
                     print("cost: %f" % (test_cost))
 
             # Decay DecoderLoss sparsity penalty
-            self.loss.alpha *= .85
+            self.loss.decay()
 
             # for plotting
             train_costs.append(cost / n_batches)
@@ -328,7 +328,7 @@ def decoder_setup_1():
                 'pool': {'op': 'avg', 'kernel': (2, 2, 2), 'causal': True}
             }
         ],
-        # spatial conv layers: [in, out, (D, H, W), stride]
+        # spatial conv layers: {in, out, kernel, stride}
         [
             # {'in': 15, 'out': 64, 'kernel': (1, 3, 3), 'stride': 1}
         ],
@@ -343,7 +343,7 @@ def decoder_setup_1():
                 'stride': 1, 'groups': 1, 'acivation': nn.ReLU
             }
         ],
-        # ConvTranspose layers: [in, out, (D, H, W), stride]
+        # ConvTranspose layers: {in, out, kernel, stride}
         [
             {'in': 128, 'out': 64, 'kernel': (3, 3, 3), 'stride': (2, 2, 2)},
             {'in': 64, 'out': 16, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
@@ -370,7 +370,7 @@ def decoder_setup_2():
                 'pool': {'op': 'avg', 'kernel': (2, 2, 2), 'causal': False}
             }
         ],
-        # spatial conv layers: [in, out, (D, H, W), stride]
+        # spatial conv layers: {in, out, kernel, stride}
         [
 
         ],
@@ -385,7 +385,7 @@ def decoder_setup_2():
                 'stride': 1, 'groups': 1, 'acivation': nn.ReLU
             }
         ],
-        # ConvTranspose layers: [in, out, (D, H, W), stride]
+        # ConvTranspose layers: {in, out, kernel, stride}
         [
             {'in': 128, 'out': 64, 'kernel': (3, 3, 3), 'stride': (2, 2, 2)},
             {'in': 64, 'out': 1, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
@@ -411,7 +411,7 @@ def decoder_setup_3():
                 'pool': {'op': 'avg', 'kernel': (1, 2, 2)}
             }
         ],
-        # spatial conv layers: [in, out, (D, H, W), stride]
+        # spatial conv layers: {in, out, kernel, stride}
         [
 
         ],
@@ -426,7 +426,7 @@ def decoder_setup_3():
                 'stride': 1, 'groups': 1, 'acivation': nn.ReLU
             }
         ],
-        # ConvTranspose layers: [in, out, (D, H, W), stride]
+        # ConvTranspose layers: {in, out, kernel, stride}
         [
             {'in': 128, 'out': 64, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
             {'in': 64, 'out': 1, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
@@ -445,7 +445,6 @@ def decoder_setup_4():
         # pre-pooling
         {'op': 'avg', 'kernel': (1, 2, 2)},
         # grouped temporal conv stacks:
-        # [in, [block_channel(s)], (D, H, W), stride, dilation, groups]
         [
             {
                 'in': 15, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
@@ -453,7 +452,7 @@ def decoder_setup_4():
                 'pool': {'op': 'avg', 'kernel': (2, 2, 2)}
             }
         ],
-        # spatial conv layers: [in, out, (D, H, W), stride]
+        # spatial conv layers: {in, out, kernel, stride}
         [
             # {'in': 15, 'out': 64, 'kernel': (2, 1, 1), 'stride': 1}
         ],
@@ -469,7 +468,7 @@ def decoder_setup_4():
         [
 
         ],
-        # ConvTranspose layers: [in, out, (D, H, W), stride]
+        # ConvTranspose layers: {in, out, kernel, stride}
         [
             {'in': 64, 'out': 64, 'kernel': (3, 3, 3), 'stride': (2, 2, 2)},
             {'in': 64, 'out': 1, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
@@ -488,10 +487,12 @@ def main():
 
     print('Building datasets...')
     train_set = RetinaVideos(
-        train_path, preload=False, crop_centre=[100, 100], time_first=False
+        train_path, preload=False, crop_centre=[100, 100], time_first=False,
+        frame_lag=0
     )
     test_set = RetinaVideos(
-        test_path, preload=True, crop_centre=[100, 100], time_first=False
+        test_path, preload=True, crop_centre=[100, 100], time_first=False,
+        frame_lag=0
     )
 
     print('Building model...')
@@ -508,8 +509,8 @@ def main():
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=20, batch_sz=4, print_every=80,
-        loss_alpha=10
+        train_set, test_set, lr=1e-2, epochs=10, batch_sz=4, print_every=80,
+        loss_alpha=10, loss_decay=.9
     )
 
     print('Training set examples...')

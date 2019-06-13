@@ -8,9 +8,13 @@ class DecoderLoss(nn.Module):
     stimulus values, rather than staying near zero always to minimize loss
     (since most of the video is zero).
     """
-    def __init__(self, alpha=1):
+    def __init__(self, alpha=1, decay=1):
         super(DecoderLoss, self).__init__()
         self.alpha = alpha
+        self.decay_rate = decay
+
+    def decay(self):
+        self.alpha *= self.decay_rate
 
     def forward(self, decoding, targets):
         error = (decoding - targets).pow(2) * (1 + self.alpha*targets.abs())

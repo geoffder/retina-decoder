@@ -11,12 +11,13 @@ class RetinaVideos(Dataset):
     """Cluster encoded ganglion network and stimulus video Dataset."""
 
     def __init__(self, root_dir, preload=False, crop_centre=None,
-                 time_first=True):
+                 time_first=True, frame_lag=0):
         self.root_dir = root_dir
         self.rec_frame = self.build_lookup(root_dir)
         self.preload = preload
         self.crop_centre = crop_centre
         self.time_first = time_first  # whether time is first dim, or depth
+        self.frame_lag = frame_lag
         if preload:  # load data that is common across samples to memory
             self.all_masks, self.all_stims = self.preloader()
 
@@ -44,9 +45,6 @@ class RetinaVideos(Dataset):
         "Preload cluster masks and stimuli into RAM for faster DataLoader."
         masks = [self.get_masks(idx) for idx in range(self.__len__())]
         stims = [self.get_stim(idx) for idx in range(self.__len__())]
-        if self.crop_centre is not None:
-            masks = [self.crop(mask) for mask in masks]
-            stims = [self.crop(stim) for stim in stims]
         return masks, stims
 
     def crop(self, matrix):
@@ -63,7 +61,7 @@ class RetinaVideos(Dataset):
                 'masks',
                 'clusters.npy'
             ))
-        return masks
+        return self.crop(masks) if self.crop_centre is not None else masks
 
     def get_stim(self, idx):
         "Load stimuli (common across all networks) into memory."
@@ -71,8 +69,19 @@ class RetinaVideos(Dataset):
                 self.root_dir,
                 'stims',
                 self.rec_frame.iloc[idx, 1]  # file name
-            ))
-        return stim
+            ))[self.frame_lag:, :, :]  # skip photo-receptor lag frames
+        return self.crop(stim) if self.crop_centre is not None else stim
+
+    def get_rec(self, idx):
+        "Load network activity recording into memory."
+        rec = np.load(os.path.join(
+            self.root_dir,
+            self.rec_frame.iloc[idx, 0],  # net folder
+            'cells',
+            self.rec_frame.iloc[idx, 1]  # file name
+        ))
+        rec = rec[:-self.frame_lag, :, :] if self.frame_lag > 0 else rec
+        return self.crop(rec) if self.crop_centre is not None else rec
 
     def __len__(self):
         "Number of samples in dataset."
@@ -80,24 +89,14 @@ class RetinaVideos(Dataset):
 
     def __getitem__(self, idx):
         # network activity movie
-        rec = np.load(os.path.join(
-            self.root_dir,
-            self.rec_frame.iloc[idx, 0],  # net folder
-            'cells',
-            self.rec_frame.iloc[idx, 1]  # file name
-        ))
-        rec = self.crop(rec) if self.crop_centre is not None else rec
+        rec = self.get_rec(idx)
         # cluster encoding masks and target stimuli
         if self.preload:
             masks = self.all_masks[idx]
             stim = self.all_stims[idx]
         else:
-            if self.crop_centre is not None:
-                masks = self.crop(self.get_masks(idx))
-                stim = self.crop(self.get_stim(idx))
-            else:
-                masks = self.get_masks(idx)
-                stim = self.get_stim(idx)
+            masks = self.get_masks(idx)
+            stim = self.get_stim(idx)
 
         # keep stimulus in -1 to 1 range (max contrasts of black/white)
         stim = stim.clip(-1, 1)
