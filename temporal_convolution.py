@@ -194,7 +194,7 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.backends.cudnn.benchmark = True
 
-    # generate random data and build Convolutional RNN cells
+    # generate random data and build a Temporal CNN
     data = torch.randn(5, 15, 60, 30, 30).to(device)  # (N, C, T, H, W)
     tcnn = TemporalConv3dStack(
         15,  # input channels
@@ -203,7 +203,7 @@ if __name__ == '__main__':
         space_dilation=1,
         groups=1,
         dropout=0,
-        activation=nn.Tanh
+        activation=nn.ReLU
     ).to(device)
 
     # run data through Temporal Convolution network
