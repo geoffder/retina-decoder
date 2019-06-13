@@ -282,15 +282,21 @@ class RetinaDecoder(nn.Module):
         self.eval()  # set the model to testing mode
         sample_loader = DataLoader(sample_set, batch_size=1, num_workers=2)
 
+        # make a parent output folder for this dataset if it doesn't exist
+        outfold = os.path.join(sample_set.root_dir, 'outputs')
+        if not os.path.isdir(outfold):
+                os.mkdir(outfold)
+        # prompt for name of and create this particular runs output folder
         while True:
             nametag = input("Decoding set name: ")
-            basefold = os.path.join(sample_set.root_dir, nametag)
+            basefold = os.path.join(outfold, nametag)
             if not os.path.isdir(basefold):
                 os.mkdir(basefold)
                 break
             else:
                 print('Folder exists, provide another name...')
 
+        # generate decoding of every sample in given dataset
         for i, sample in enumerate(sample_loader):
             with torch.no_grad():
                 # get stimulus prediction from network activity
@@ -308,6 +314,7 @@ class RetinaDecoder(nn.Module):
             )
             if not os.path.isdir(decofold):
                 os.mkdir(decofold)
+            # .npy format
             np.save(
                 # file name corresponding to stimulus
                 os.path.join(decofold, sample_set.rec_frame.iloc[i, 1]),
