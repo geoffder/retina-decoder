@@ -9,7 +9,7 @@ TemporalBlock and Chomp Adapted to work with 3d convolutions (video data).
 
 
 class Chomp3d(nn.Module):
-    "Expects (_, _, T, H, W) input. Bites off the end of the sequence dim T."
+    "Expects (_, _, T, H, W) input. Chomps off the end of the sequence dim T."
     def __init__(self, chomp_size):
         super(Chomp3d, self).__init__()
         self.chomp_size = chomp_size
@@ -21,8 +21,18 @@ class Chomp3d(nn.Module):
         return X[:, :, :-self.chomp_size, :, :].contiguous()
 
     def skip(self, X):
-        "Don't try to chomp, [:-0] results in a terminal error."
+        "Don't try to chomp, [:-0] returns empty Tensor."
         return X
+
+
+class Bite3d(nn.Module):
+    "Expects (_, _, T, H, W) input. Bites off the start of the sequence dim T."
+    def __init__(self, bite_size):
+        super(Bite3d, self).__init__()
+        self.bite_size = bite_size
+
+    def forward(self, X):
+        return X[:, :, self.bite_size:, :, :].contiguous()
 
 
 class TemporalBlock3d(nn.Module):
@@ -145,7 +155,13 @@ class CausalPool3d(nn.Module):
     '''
     Provides causal padding for 3d pooling operations (op='avg' or 'max').
     No padding in spatial, usual pooling convention is only deviated from in
-    the temporal dimension.
+    the temporal dimension. Perform rolling avg (or max) operation in time,
+    before strided downsampling on offset sequence. Offset with Bite3d allows
+    sampling t=[1, 3, 5, ..., T]; rather than t=[0, 2, 4, ..., T-1].
+
+    TODO: To make it possible to use kernels > 2 in time, need to do padding
+    of my own before pooling since Pytorch pooling layers will not allow pad
+    to be greater than half of the kernel size. (not a rush since I use kT=2)
     '''
     def __init__(self, op, kernel, stride=None):
         super(CausalPool3d, self).__init__()
@@ -153,14 +169,21 @@ class CausalPool3d(nn.Module):
         stride = kernel if stride is None else stride
         padding = (kernel[0]-1, 0, 0)  # Causal padding in time.
 
+        # strided pooling in space, and rolling stride=1 operation on time
         if op == 'avg':
             pool = nn.AvgPool3d(
-                kernel, stride, padding, count_include_pad=False
+                kernel, (1, *stride[1:]), padding, count_include_pad=False
             )
         elif op == 'max':
-            pool = nn.MaxPool3d(kernel, stride, padding)
+            pool = nn.MaxPool3d(kernel, (1, *stride[1:]), padding)
+        chomp = Chomp3d(padding[0])  # remove end padding
 
-        self.network = nn.Sequential(pool, Chomp3d(padding[0]))
+        # temporal downsampling
+        bite = Bite3d(padding[0])  # offset sequence for sampling
+        downsample = nn.AvgPool3d((1, 1, 1), (stride[0], 1, 1))
+
+        # package as sequential network
+        self.network = nn.Sequential(pool, chomp, bite, downsample)
 
     def forward(self, X):
         return self.network(X)
