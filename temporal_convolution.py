@@ -36,6 +36,15 @@ class Bite3d(nn.Module):
 
 
 class TemporalBlock3d(nn.Module):
+    """
+    Pair of weight normalized causal (in time) 3d convolutional layers with
+    optional dropout, and a residual skip connection. Padding parameter is
+    taken in the shape of (T, H, W), the spatial elements of which are handled
+    as usual. T padding is double needed for 'same' output, while the Chomp3d
+    module removes all of the padding from the end of the sequential time
+    dimension. Dimensionality reduction is applied to the skip connection if
+    the number of input channels does not match the output channels.
+    """
     def __init__(self, in_channels, out_channels, kernel_size, stride,
                  dilation, padding, groups=1, dropout=0, activation=nn.ReLU):
         super(TemporalBlock3d, self).__init__()
@@ -91,6 +100,10 @@ class TemporalBlock3d(nn.Module):
 
 
 class TemporalConv3dStack(nn.Module):
+    """
+    Build a temporal convolutional network by stacking exponentionally dilated
+    causal convolutional residual blocks (2 conv layers with skip connections).
+    """
     def __init__(self, in_channels, block_channels, kernel_size=(2, 1, 1),
                  space_dilation=1, groups=1, dropout=0, activation=nn.ReLU):
         super(TemporalConv3dStack, self).__init__()
