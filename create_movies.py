@@ -137,6 +137,13 @@ def build_stim_movie(folder, dims, downsample, space_redux):
                 r2 = (x - xpos)**2 + (y - ypos)**2
                 # circular mask
                 movie[t, :, :] += (r2 <= (param['radius']/space_redux)**2)*amp
+            elif param['type'] == 'ellipse':
+                # x and y radius grids
+                xp = (x-xpos)*np.cos(orient) + (y-ypos)*np.sin(orient)
+                yp = -(x-xpos)*np.sin(orient) + (y-ypos)*np.cos(orient)
+                # elliptical mask
+                ax0, ax1 = param['width'], param['length']
+                movie[t, :, :] += ((xp/ax0)**2 + (yp/ax1)**2 <= 1)*amp
 
     return recs, movie
 
@@ -410,6 +417,33 @@ def example_gifs(dataset_path, net_name, stim_name, decoding_fldr):
         movie_giffer(pth, vid, timestep=100)
 
 
+def example_gifs_no_decoding(dataset_path, net_name, stim_name):
+    # load numpy files for network recording, stimulus, and decoding
+    rec = crop(np.load(
+        os.path.join(dataset_path, net_name, 'cells', stim_name+'.npy')
+    ), [100, 100])
+    stim = crop(np.load(
+        os.path.join(dataset_path, 'stims', stim_name+'.npy')
+    ), [100, 100])
+
+    # normalize stim (they are on -1 to 1 scale)
+    stim = ((stim + 1) / 2)
+    # dirty hack to allow background to be grey.
+    stim[-1, 0, 0], stim[-1, 0, 0] = 0, 1
+
+    # make folder if it doesn't exist
+    gif_path = os.path.join(dataset_path, net_name, 'gifs')
+    if not os.path.isdir(gif_path):
+        os.mkdir(gif_path)
+
+    # create gifs for recording, stimulus, decoding triplet
+    for vid, name in zip([rec, stim], ['net', 'stim']):
+        if not os.path.isdir(os.path.join(gif_path, stim_name)):
+            os.mkdir(os.path.join(gif_path, stim_name))
+        pth = os.path.join(gif_path, stim_name, name)
+        movie_giffer(pth, vid, timestep=100)
+
+
 def crop(matrix, sz):
     "Take (_, H, W) matrix and crop centre of spatial dimensions."
     ox, oy = np.array(matrix.shape[1:]) // 2
@@ -418,22 +452,39 @@ def crop(matrix, sz):
 
 
 if __name__ == '__main__':
-    datapath = 'D:/retina-sim-data/second/'
+    # datapath = 'D:/retina-sim-data/second/'
+    datapath = 'D:/retina-sim-data/'
 
     # package_experiment(
     #     datapath, 'testExperiment', downsample=10, space_redux=4
     # )
     # test_gifs('med_light_bar')
 
-    # build_folder_dataset(
-    #     datapath, 'video_dataset/', downsample=10, space_redux=4
-    # )
+    build_folder_dataset(
+        datapath, 'video_dataset/', downsample=10, space_redux=2
+    )
 
-    datapath += 'test_video_dataset/'
-    decoding_path = 'postconv_decay85e-2_biteoffset_epoch20'
+    # datapath += 'test_video_dataset/'
+    # decoding_path = 'postconv_decay85e-2_biteoffset_epoch20'
+    # stims = [
+    #     'thick_dark_bar0', 'med_dark_bar135', 'med_light_bar180',
+    #     'thick_light_bar45', 'thin_dark_bar315', 'thin_light_bar270'
+    # ]
+    # for stim in stims:
+    #     example_gifs(datapath, 'net14', stim, decoding_path)
+
+    datapath += 'video_dataset/'
+    # stims = [
+    #     'small_light_circle0', 'small_dark_circle225',
+    #     'med_light_bar0', 'med_light_bar45', 'med_light_bar90',
+    #     'med_light_bar135', 'med_light_bar180', 'med_light_bar225',
+    #     'med_light_bar270', 'med_light_bar315',
+    #     'thin_dark_bar0', 'thin_dark_bar45', 'thin_dark_bar90',
+    #     'thin_dark_bar135', 'thin_dark_bar180',
+    # ]
     stims = [
-        'thick_dark_bar0', 'med_dark_bar135', 'med_light_bar180',
-        'thick_light_bar45', 'thin_dark_bar315', 'thin_light_bar270'
+        'small_light_collision0', 'small_light_collision45',
+        'small_light_collision90', 'small_light_collision135'
     ]
     for stim in stims:
-        example_gifs(datapath, 'net14', stim, decoding_path)
+        example_gifs_no_decoding(datapath, 'net0', stim)
