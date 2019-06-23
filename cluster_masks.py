@@ -6,9 +6,12 @@ import os
 from cell_clustering import simple_metrics
 
 
-def get_clusters(root_dir, nets):
+def get_clusters(root_dir, nets, ignored_stims=[]):
     # prepare data (load recordings, extract metrics, and normalize over cells)
-    net_list = [simple_metrics(root_dir+net+'/') for net in nets]
+    net_list = [
+        simple_metrics(root_dir+net+'/', ignored_stims=ignored_stims)
+        for net in nets
+    ]
     net_pops = [net.shape[0] for net in net_list]  # populations of networks
     data = np.concatenate(net_list, axis=0)
     data = (data - data.mean(axis=0)) / data.std(axis=0)  # normalize (cells)
@@ -51,14 +54,17 @@ def sum_masks(pth, folder, clusts):
 
 
 def main():
-    basepath = 'D:/retina-sim-data/second/'
-    datapath = 'D:/retina-sim-data/second/video_dataset/'
+    basepath = 'D:/retina-sim-data/third/'
+    datapath = 'D:/retina-sim-data/third/train_video_dataset/'
+
+    # only want full field stimuli
+    ignore = ['circle', 'collision']
 
     net_names = [
         name for name in os.listdir(basepath)
         if os.path.isdir(basepath+name) and 'net' in name
     ]
-    clustered_nets = get_clusters(basepath, net_names)
+    clustered_nets = get_clusters(basepath, net_names, ignored_stims=ignore)
 
     clustered_net_masks = [
         sum_masks(datapath, name, net)

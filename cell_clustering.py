@@ -12,10 +12,13 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 
-def simple_metrics(net_dir):
-    # all stimuli shown to this network
-    stim_names = [name for name in os.listdir(net_dir)
-                  if os.path.isdir(net_dir+name)]
+def simple_metrics(net_dir, ignored_stims=[]):
+    # all battery appropriate stimuli shown to this network
+    stim_names = [
+        name for name in os.listdir(net_dir)
+        if os.path.isdir(net_dir+name)
+        and not any([ignore in name for ignore in ignored_stims])
+    ]
     recs = [np.loadtxt(net_dir+stim+'/cellRecs.csv', delimiter=',').T
             for stim in stim_names]
 
