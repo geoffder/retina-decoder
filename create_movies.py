@@ -453,7 +453,7 @@ def crop(matrix, sz):
 
 if __name__ == '__main__':
     # datapath = 'D:/retina-sim-data/second/'
-    datapath = 'D:/retina-sim-data/'
+    datapath = 'D:/retina-sim-data/third/'
 
     # package_experiment(
     #     datapath, 'testExperiment', downsample=10, space_redux=4
@@ -473,7 +473,7 @@ if __name__ == '__main__':
     # for stim in stims:
     #     example_gifs(datapath, 'net14', stim, decoding_path)
 
-    datapath += 'video_dataset/'
+    # datapath += 'video_dataset/'
     # stims = [
     #     'small_light_circle0', 'small_dark_circle225',
     #     'med_light_bar0', 'med_light_bar45', 'med_light_bar90',
@@ -482,9 +482,9 @@ if __name__ == '__main__':
     #     'thin_dark_bar0', 'thin_dark_bar45', 'thin_dark_bar90',
     #     'thin_dark_bar135', 'thin_dark_bar180',
     # ]
-    stims = [
-        'small_light_collision0', 'small_light_collision45',
-        'small_light_collision90', 'small_light_collision135'
-    ]
-    for stim in stims:
-        example_gifs_no_decoding(datapath, 'net0', stim)
+    # stims = [
+    #     'small_light_collision0', 'small_light_collision45',
+    #     'small_light_collision90', 'small_light_collision135'
+    # ]
+    # for stim in stims:
+    #     example_gifs_no_decoding(datapath, 'net0', stim)
