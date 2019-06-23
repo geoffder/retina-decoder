@@ -285,7 +285,7 @@ class RetinaDecoder(nn.Module):
         # make a parent output folder for this dataset if it doesn't exist
         outfold = os.path.join(sample_set.root_dir, 'outputs')
         if not os.path.isdir(outfold):
-                os.mkdir(outfold)
+            os.mkdir(outfold)
         # prompt for name of and create this particular runs output folder
         while True:
             nametag = input("Decoding set name: ")
