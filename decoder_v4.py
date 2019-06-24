@@ -489,8 +489,8 @@ def decoder_setup_4():
 
 
 def main():
-    train_path = 'D:/retina-sim-data/second/train_video_dataset/'
-    test_path = 'D:/retina-sim-data/second/test_video_dataset/'
+    train_path = 'D:/retina-sim-data/third/train_video_dataset/'
+    test_path = 'D:/retina-sim-data/third/test_video_dataset/'
 
     print('Building datasets...')
     train_set = RetinaVideos(
@@ -516,7 +516,7 @@ def main():
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=10, batch_sz=4, print_every=80,
+        train_set, test_set, lr=1e-2, epochs=20, batch_sz=4, print_every=150,
         loss_alpha=10, loss_decay=.9
     )
 
