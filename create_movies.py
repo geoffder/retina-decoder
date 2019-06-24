@@ -460,18 +460,20 @@ if __name__ == '__main__':
     # )
     # test_gifs('med_light_bar')
 
-    build_folder_dataset(
-        datapath, 'video_dataset/', downsample=10, space_redux=2
-    )
+    # build_folder_dataset(
+    #     datapath, 'video_dataset/', downsample=10, space_redux=2
+    # )
 
-    # datapath += 'test_video_dataset/'
-    # decoding_path = 'postconv_decay85e-2_biteoffset_epoch20'
-    # stims = [
-    #     'thick_dark_bar0', 'med_dark_bar135', 'med_light_bar180',
-    #     'thick_light_bar45', 'thin_dark_bar315', 'thin_light_bar270'
-    # ]
-    # for stim in stims:
-    #     example_gifs(datapath, 'net14', stim, decoding_path)
+    datapath += 'test_video_dataset/'
+    decoding_path = 'outputs/test_postconv_epoch20'
+    stims = [
+        'small_dark_circle0', 'small_dark_circle225', 'small_light_circle90',
+        'small_light_circle135', 'small_light_collision0',
+        'small_light_collision45', 'small_dark_collision90',
+        'small_dark_collision135'
+    ]
+    for stim in stims:
+        example_gifs(datapath, 'net16', stim, decoding_path)
 
     # datapath += 'video_dataset/'
     # stims = [
