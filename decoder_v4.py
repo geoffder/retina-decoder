@@ -19,16 +19,17 @@ from torch.utils.data import DataLoader
 
 """
 Thoughts:
-- try regular convolutions after (or interleaved) with transpose convolutions
-    to smooth out the blockiness that arises from the upsampling. Have not
-    tried interleaved yet.
-- test out a DecoderLoss alpha scheduling scheme. e.g. Update alpha penalty
-    during fitting as a function of epoch. (Decrease over time to become more
-    like regular MSE loss).
-- also, scale the calculated loss up by a function of how much alpha has
-    decreased, since decaying alpha will decrease loss on it's own.
+- scale the calculated loss up by a function of how much alpha has
+    decreased, since decaying alpha will decrease loss on it's own?
     out = mean(loss) * start_alpha/current_alpha
     There is probably a better equation, but this gets at the idea...
+- need to try out 3x5x5 or 5x5x5 kernels for transpose convolutions,
+    unfortunately dilation is now really an option given how transpose
+    upsampling works. This will mean a memory hit, but post-convolutions may be
+    cuttable. More spatial (and temporal) flexibility for the filters.
+    Especially important for spatio-temporal tilts (and if there is ganglion
+    offset).
+- try RMSProp with momentum soon, see whether more stable than ADAM
 """
 
 
@@ -488,6 +489,48 @@ def decoder_setup_4():
     return decoder
 
 
+def decoder_setup_5():
+    "Bigger transpose kernels. Also, consider 5x5 spatial for space-time convs"
+    decoder = RetinaDecoder(
+        # pre-pooling
+        {'op': 'avg', 'kernel': (1, 2, 2), 'causal': True},
+        # grouped temporal conv stacks:
+        [
+            {
+                'in': 15, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
+                'stride': 1, 'groups': 15, 'acivation': nn.ReLU,
+                'pool': {'op': 'avg', 'kernel': (2, 2, 2), 'causal': True}
+            }
+        ],
+        # spatial conv layers: {in, out, kernel, stride}
+        [
+            # {'in': 15, 'out': 64, 'kernel': (1, 3, 3), 'stride': 1}
+        ],
+        # for each ConvRNN cell:
+        [
+
+        ],
+        # temporal convolution stack(s)
+        [
+            {
+                'in': 15, 'out': [128, 256, 128], 'kernel': (2, 3, 3),
+                'stride': 1, 'groups': 1, 'acivation': nn.ReLU
+            }
+        ],
+        # ConvTranspose layers: {in, out, kernel, stride}
+        [
+            {'in': 128, 'out': 64, 'kernel': (5, 5, 5), 'stride': (2, 2, 2)},
+            {'in': 64, 'out': 1, 'kernel': (5, 5, 5), 'stride': (1, 2, 2)},
+        ],
+        # post conv layers
+        [
+            # {'in': 16, 'out': 8, 'kernel': (1, 3, 3), 'stride': 1},
+            # {'in': 8, 'out': 1, 'kernel': (1, 1, 1), 'stride': 1}
+        ],
+    )
+    return decoder
+
+
 def main():
     train_path = 'D:/retina-sim-data/third/train_video_dataset/'
     test_path = 'D:/retina-sim-data/third/test_video_dataset/'
@@ -503,7 +546,7 @@ def main():
     )
 
     print('Building model...')
-    decoder = decoder_setup_1()
+    decoder = decoder_setup_5()
 
     # from torch.utils.tensorboard import SummaryWriter
     # writer = SummaryWriter()
@@ -516,7 +559,7 @@ def main():
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=20, batch_sz=4, print_every=150,
+        train_set, test_set, lr=1e-2, epochs=5, batch_sz=4, print_every=150,
         loss_alpha=10, loss_decay=.9
     )
 
