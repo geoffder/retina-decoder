@@ -532,8 +532,10 @@ def decoder_setup_5():
 
 
 def main():
-    train_path = 'D:/retina-sim-data/third/train_video_dataset/'
-    test_path = 'D:/retina-sim-data/third/test_video_dataset/'
+    # train_path = 'D:/retina-sim-data/third/train_video_dataset/'
+    # test_path = 'D:/retina-sim-data/third/test_video_dataset/'
+    train_path = '/media/geoff/Data/retina-sim-data/third/train_video_dataset/'
+    test_path = '/media/geoff/Data/retina-sim-data/third/test_video_dataset/'
 
     print('Building datasets...')
     train_set = RetinaVideos(
