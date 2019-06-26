@@ -33,7 +33,7 @@ Thoughts:
 """
 
 # use GPU if available.
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class RetinaDecoder(nn.Module):
@@ -52,7 +52,8 @@ class RetinaDecoder(nn.Module):
         self.post_conv_params = post_conv_params
         # create model and send to correct device (GPU if available)
         self.build()
-        self.to(DEVICE)
+        self.dv = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.to(self.dv)
 
     def build(self):
         # # # # # # # # # # ENCODER NETWORK # # # # # # # # # #
@@ -173,7 +174,7 @@ class RetinaDecoder(nn.Module):
         N = train_set.__len__()  # number of samples
 
         # DecoderLoss equivalent to MSE when alpha=0 (original default: 10)
-        self.loss = DecoderLoss(alpha=loss_alpha, decay=loss_decay).to(DEVICE)
+        self.loss = DecoderLoss(alpha=loss_alpha, decay=loss_decay).to(self.dv)
         self.optimizer = optim.Adam(self.parameters(), lr=lr, eps=1e-8)
 
         n_batches = N // batch_sz
@@ -182,7 +183,7 @@ class RetinaDecoder(nn.Module):
             cost = 0
             print("epoch:", i, "n_batches:", n_batches)
             for j, batch in enumerate(train_loader):
-                net, stim = batch['net'].to(DEVICE), batch['stim'].to(DEVICE)
+                net, stim = batch['net'].to(self.dv), batch['stim'].to(self.dv)
                 cost += self.train_step(net, stim)
                 del net, stim, batch
 
@@ -190,8 +191,8 @@ class RetinaDecoder(nn.Module):
                     # costs and accuracies for test set
                     test_cost = 0
                     for t, testB in enumerate(test_loader, 1):
-                        net = testB['net'].to(DEVICE)
-                        stim = testB['stim'].to(DEVICE)
+                        net = testB['net'].to(self.dv)
+                        stim = testB['stim'].to(self.dv)
                         testB_cost = self.get_cost(net, stim)
                         del net, stim, testB
                         test_cost += testB_cost
@@ -252,7 +253,7 @@ class RetinaDecoder(nn.Module):
         for i, sample in enumerate(sample_loader):
             with torch.no_grad():
                 # get stimulus prediction from network activity
-                net = sample['net'].to(DEVICE)
+                net = sample['net'].to(self.dv)
                 decoded = self.forward(net)
                 del net
 
@@ -304,7 +305,7 @@ class RetinaDecoder(nn.Module):
         for i, sample in enumerate(sample_loader):
             with torch.no_grad():
                 # get stimulus prediction from network activity
-                net = sample['net'].to(DEVICE)
+                net = sample['net'].to(self.dv)
                 decoded = self.forward(net)
                 del sample, net
 
@@ -581,4 +582,5 @@ def main():
 
 if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
+
     main()
