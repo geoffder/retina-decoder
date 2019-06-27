@@ -209,11 +209,13 @@ class RetinaDecoder(nn.Module):
                         test_cost += testB_cost
                         test_prog.step()
                     test_cost /= t+1
-
                     print("validation cost: %f" % (test_cost))
+
                     train_prog = ProgressBar(
-                        print_every, size=print_every, label='training: '
+                        print_every, size=test_set.__len__()*2 // batch_sz,
+                        label='training: '
                     )
+                    train_prog.step() if j == 0 else 0  # hack, skipped batch
                 # start = timer.time()
 
             # Decay DecoderLoss sparsity penalty
@@ -590,7 +592,7 @@ def main():
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=1, batch_sz=4, print_every=150,
+        train_set, test_set, lr=1e-2, epochs=1, batch_sz=4, print_every=0,
         loss_alpha=10, loss_decay=.9, peons=2
     )
 
