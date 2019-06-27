@@ -14,8 +14,10 @@ from torch import nn
 from torch import optim
 
 from custom_loss import DecoderLoss
-from retina_dataset import RetinaVideos
+from retina_dataset_h5 import RetinaVideos
 from torch.utils.data import DataLoader
+
+import time as timer
 
 """
 Thoughts:
@@ -179,12 +181,15 @@ class RetinaDecoder(nn.Module):
         for i in range(epochs):
             cost = 0
             print("epoch:", i, "n_batches:", n_batches)
+            start = 0
             for j, batch in enumerate(train_loader):
+                print('time to load batch', timer.time()-start)
+                start = timer.time()
                 net, stim = batch['net'].to(self.dv), batch['stim'].to(self.dv)
                 cost += self.train_step(net, stim)
                 del net, stim, batch
-
-                if j % print_every == 0:
+                print('time to train', timer.time()-start)
+                if j % print_every == -1:
                     # costs and accuracies for test set
                     test_cost = 0
                     for t, testB in enumerate(test_loader, 1):
@@ -196,6 +201,7 @@ class RetinaDecoder(nn.Module):
                     test_cost /= t+1
 
                     print("cost: %f" % (test_cost))
+                start = timer.time()
 
             # Decay DecoderLoss sparsity penalty
             self.loss.decay()
@@ -535,17 +541,26 @@ def decoder_setup_5():
 def main():
     # train_path = 'D:/retina-sim-data/third/train_video_dataset/'
     # test_path = 'D:/retina-sim-data/third/test_video_dataset/'
-    train_path = '/media/geoff/Data/retina-sim-data/third/train_video_dataset/'
-    test_path = '/media/geoff/Data/retina-sim-data/third/test_video_dataset/'
+    basepath = '/media/geoff/Data/retina-sim-data/third/'
+    train_path = basepath+ 'train_video_dataset/'
+    test_path = basepath+ 'test_video_dataset/'
 
     print('Building datasets...')
+    # train_set = RetinaVideos(
+    #     train_path, preload=False, crop_centre=[100, 100], time_first=False,
+    #     frame_lag=0
+    # )
+    # test_set = RetinaVideos(
+    #     test_path, preload=False, crop_centre=[100, 100], time_first=False,
+    #     frame_lag=0
+    # )
     train_set = RetinaVideos(
-        train_path, preload=False, crop_centre=[100, 100], time_first=False,
-        frame_lag=0
+        basepath, 'train_video_dataset.h5', preload=False,
+        crop_centre=[100, 100], time_first=False, frame_lag=0
     )
     test_set = RetinaVideos(
-        test_path, preload=True, crop_centre=[100, 100], time_first=False,
-        frame_lag=0
+        basepath, 'test_video_dataset.h5', preload=False,
+        crop_centre=[100, 100], time_first=False, frame_lag=0
     )
 
     print('Building model...')
@@ -560,19 +575,10 @@ def main():
                 break
         decoder.load_state_dict(torch.load(dict_path))
 
-    # from torch.utils.tensorboard import SummaryWriter
-    # writer = SummaryWriter()
-    # writer.add_graph(
-    #     decoder, next(iter((
-    #         DataLoader(train_set)
-    #     )))['net'].to(device)
-    #  )
-    # writer.close()
-
     print('Fitting model...')
     decoder.fit(
         train_set, test_set, lr=1e-2, epochs=1, batch_sz=4, print_every=150,
-        loss_alpha=10, loss_decay=.9, peons=4
+        loss_alpha=10, loss_decay=.9, peons=2
     )
 
     print('Training set examples...')
