@@ -29,8 +29,8 @@ class ProgressBar(object):
     def update(self):
         ticks = int(np.floor(self.prog/self.tick))
         print(
-            self.label + '[' + '='*ticks + ' '*(self.size-ticks) + ']',
-            end='\r', flush=False
+            '\r' + self.label + '[' + '='*ticks + ' '*(self.size-ticks) + ']',
+            end='', flush=False
         )
 
     def check(self):
