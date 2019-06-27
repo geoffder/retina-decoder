@@ -30,7 +30,7 @@ class ProgressBar(object):
         ticks = int(np.floor(self.prog/self.tick))
         print(
             self.label + '[' + '='*ticks + ' '*(self.size-ticks) + ']',
-            end='\r', flush=True
+            end='\r', flush=False
         )
 
     def check(self):
