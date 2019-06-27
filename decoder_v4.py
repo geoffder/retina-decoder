@@ -572,7 +572,7 @@ def main():
     print('Fitting model...')
     decoder.fit(
         train_set, test_set, lr=1e-2, epochs=1, batch_sz=4, print_every=150,
-        loss_alpha=10, loss_decay=.9
+        loss_alpha=10, loss_decay=.9, peons=4
     )
 
     print('Training set examples...')
