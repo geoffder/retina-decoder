@@ -53,13 +53,7 @@ def sum_masks(pth, folder, clusts):
     return np.stack(clust_masks, axis=0)
 
 
-def main():
-    basepath = 'D:/retina-sim-data/third/'
-    datapath = 'D:/retina-sim-data/third/train_video_dataset/'
-
-    # only want full field stimuli
-    ignore = ['circle', 'collision']
-
+def create_cluster_masks(basepath, videopath, ignore):
     net_names = [
         name for name in os.listdir(basepath)
         if os.path.isdir(basepath+name) and 'net' in name
@@ -67,12 +61,23 @@ def main():
     clustered_nets = get_clusters(basepath, net_names, ignored_stims=ignore)
 
     clustered_net_masks = [
-        sum_masks(datapath, name, net)
+        sum_masks(videopath, name, net)
         for name, net in zip(net_names, clustered_nets)
     ]
 
     for name, masks in zip(net_names, clustered_net_masks):
-        np.save(datapath+name+'/masks/clusters', masks)
+        np.save(videopath+name+'/masks/clusters', masks)
+
+
+def main():
+    basepath = 'D:/retina-sim-data/third/'
+    datapath = 'D:/retina-sim-data/third/train_video_dataset/'
+
+    # only want full field stimuli
+    ignore = ['circle', 'collision']
+
+    # cluster cells, combine ROI masks, and save
+    create_cluster_masks(basepath, datapath, ignore)
 
 
 if __name__ == '__main__':

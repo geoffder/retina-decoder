@@ -32,9 +32,6 @@ Thoughts:
 - try RMSProp with momentum soon, see whether more stable than ADAM
 """
 
-# use GPU if available.
-# DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 class RetinaDecoder(nn.Module):
 
