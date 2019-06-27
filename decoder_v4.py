@@ -7,6 +7,7 @@ import recurrent_convolution as crnns
 from temporal_convolution import TemporalConv3dStack, CausalTranspose3d
 from util_modules import Permuter, make_pool3d_layer
 from sim_util import StackPlotter
+from create_movies import ProgressBar
 
 import torch
 from torch import nn
@@ -17,7 +18,7 @@ from custom_loss import DecoderLoss
 from retina_dataset_h5 import RetinaVideos
 from torch.utils.data import DataLoader
 
-import time as timer
+# import time as timer
 
 """
 Thoughts:
@@ -162,7 +163,7 @@ class RetinaDecoder(nn.Module):
         return X
 
     def fit(self, train_set, test_set, lr=1e-4, epochs=10, batch_sz=1,
-            loss_alpha=10, loss_decay=1, print_every=40, peons=2):
+            loss_alpha=10, loss_decay=1, print_every=0, peons=2):
 
         train_loader = DataLoader(
             train_set, batch_size=batch_sz, shuffle=True, num_workers=peons
@@ -177,19 +178,27 @@ class RetinaDecoder(nn.Module):
         self.optimizer = optim.Adam(self.parameters(), lr=lr, eps=1e-8)
 
         n_batches = N // batch_sz
+        print_every = n_batches if print_every < 1 else print_every
+        train_prog = None
         train_costs, test_costs = [], []
         for i in range(epochs):
             cost = 0
             print("epoch:", i, "n_batches:", n_batches)
-            start = 0
+            # start = 0
             for j, batch in enumerate(train_loader):
-                print('time to load batch', timer.time()-start)
-                start = timer.time()
+                # print('time to load batch', timer.time()-start)
+                # start = timer.time()
                 net, stim = batch['net'].to(self.dv), batch['stim'].to(self.dv)
                 cost += self.train_step(net, stim)
                 del net, stim, batch
-                print('time to train', timer.time()-start)
+                # print('time to train', timer.time()-start)
+                train_prog.step() if train_prog is not None else 0
                 if j % print_every == 0:
+                    test_prog = ProgressBar(
+                        test_set.__len__() // batch_sz,
+                        size=test_set.__len__() // batch_sz,
+                        label='validating: '
+                    )
                     # costs and accuracies for test set
                     test_cost = 0
                     for t, testB in enumerate(test_loader, 1):
@@ -198,10 +207,14 @@ class RetinaDecoder(nn.Module):
                         testB_cost = self.get_cost(net, stim)
                         del net, stim, testB
                         test_cost += testB_cost
+                        test_prog.step()
                     test_cost /= t+1
 
-                    print("cost: %f" % (test_cost))
-                start = timer.time()
+                    print("validation cost: %f" % (test_cost))
+                    train_prog = ProgressBar(
+                        print_every, size=print_every, label='training: '
+                    )
+                # start = timer.time()
 
             # Decay DecoderLoss sparsity penalty
             self.loss.decay()
@@ -542,8 +555,8 @@ def main():
     # train_path = 'D:/retina-sim-data/third/train_video_dataset/'
     # test_path = 'D:/retina-sim-data/third/test_video_dataset/'
     basepath = '/media/geoff/Data/retina-sim-data/third/'
-    train_path = basepath+ 'train_video_dataset/'
-    test_path = basepath+ 'test_video_dataset/'
+    train_path = basepath + 'train_video_dataset/'
+    test_path = basepath + 'test_video_dataset/'
 
     print('Building datasets...')
     # train_set = RetinaVideos(
