@@ -189,7 +189,7 @@ class RetinaDecoder(nn.Module):
                 cost += self.train_step(net, stim)
                 del net, stim, batch
                 print('time to train', timer.time()-start)
-                if j % print_every == -1:
+                if j % print_every == 0:
                     # costs and accuracies for test set
                     test_cost = 0
                     for t, testB in enumerate(test_loader, 1):
