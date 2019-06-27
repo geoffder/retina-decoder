@@ -160,13 +160,13 @@ class RetinaDecoder(nn.Module):
         return X
 
     def fit(self, train_set, test_set, lr=1e-4, epochs=10, batch_sz=1,
-            loss_alpha=10, loss_decay=1, print_every=40):
+            loss_alpha=10, loss_decay=1, print_every=40, peons=2):
 
         train_loader = DataLoader(
-            train_set, batch_size=batch_sz, shuffle=True, num_workers=2
+            train_set, batch_size=batch_sz, shuffle=True, num_workers=peons
         )
         test_loader = DataLoader(
-            test_set, batch_size=batch_sz, num_workers=2
+            test_set, batch_size=batch_sz, num_workers=peons
         )
         N = train_set.__len__()  # number of samples
 
@@ -551,6 +551,15 @@ def main():
     print('Building model...')
     decoder = decoder_setup_5()
 
+    if 'n' not in input("Load pre-trained state dict? (y/n):"):
+        while True:
+            dict_path = input("Path to pickled RetinaDecoder state_dict:")
+            if not os.path.isfile(dict_path):
+                print('Not a file, typo? Try again...')
+            else:
+                break
+        decoder.load_state_dict(torch.load(dict_path))
+
     # from torch.utils.tensorboard import SummaryWriter
     # writer = SummaryWriter()
     # writer.add_graph(
@@ -562,7 +571,7 @@ def main():
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=5, batch_sz=4, print_every=150,
+        train_set, test_set, lr=1e-2, epochs=1, batch_sz=4, print_every=150,
         loss_alpha=10, loss_decay=.9
     )
 
@@ -571,9 +580,13 @@ def main():
     print('Validation set examples...')
     decoder.decode(test_set)
 
-    if 'n' not in input("Save training set decodings? (y/n): "):
+    if 'n' not in input("Save trained decoder's state dict? (y/n):"):
+        path = input('Name for pickled model state:')
+        torch.save(decoder.state_dict(), path)
+
+    if 'n' not in input("Save training set decodings? (y/n):"):
         decoder.save_decodings(train_set)
-    if 'n' not in input("Save validation set decodings? (y/n): "):
+    if 'n' not in input("Save validation set decodings? (y/n):"):
         decoder.save_decodings(test_set)
 
 
