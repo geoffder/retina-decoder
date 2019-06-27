@@ -12,9 +12,10 @@ from sim_util import rotate
 
 
 class ProgressBar(object):
-    def __init__(self, steps, size=50):
+    def __init__(self, steps, size=50, label=''):
         self.steps = steps
         self.size = size if steps > size else steps
+        self.label = label
         self.tick = np.floor(steps/self.size)
         self.prog = 0
         self.update()
@@ -28,7 +29,7 @@ class ProgressBar(object):
     def update(self):
         ticks = int(np.floor(self.prog/self.tick))
         print(
-            '[' + '='*ticks + ' '*(self.size-ticks) + ']',
+            self.label + '[' + '='*ticks + ' '*(self.size-ticks) + ']',
             end='\r', flush=True
         )
 
