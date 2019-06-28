@@ -512,7 +512,6 @@ def decoder_setup_4():
 
 
 def decoder_setup_5():
-    "Bigger transpose kernels. Also, consider 5x5 spatial for space-time convs"
     decoder = RetinaDecoder(
         # pre-pooling
         {'op': 'avg', 'kernel': (1, 2, 2), 'causal': True},
@@ -541,13 +540,12 @@ def decoder_setup_5():
         ],
         # ConvTranspose layers: {in, out, kernel, stride}
         [
-            {'in': 128, 'out': 64, 'kernel': (5, 5, 5), 'stride': (2, 2, 2)},
-            {'in': 64, 'out': 1, 'kernel': (5, 5, 5), 'stride': (1, 2, 2)},
+            {'in': 128, 'out': 64, 'kernel': (3, 3, 3), 'stride': (2, 2, 2)},
+            {'in': 64, 'out': 1, 'kernel': (3, 3, 3), 'stride': (1, 2, 2)},
         ],
         # post conv layers
         [
-            # {'in': 16, 'out': 8, 'kernel': (1, 3, 3), 'stride': 1},
-            # {'in': 8, 'out': 1, 'kernel': (1, 1, 1), 'stride': 1}
+
         ],
     )
     return decoder
