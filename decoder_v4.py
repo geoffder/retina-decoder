@@ -26,12 +26,9 @@ Thoughts:
     decreased, since decaying alpha will decrease loss on it's own?
     out = mean(loss) * start_alpha/current_alpha
     There is probably a better equation, but this gets at the idea...
-- need to try out 3x5x5 or 5x5x5 kernels for transpose convolutions,
-    unfortunately dilation is now really an option given how transpose
-    upsampling works. This will mean a memory hit, but post-convolutions may be
-    cuttable. More spatial (and temporal) flexibility for the filters.
-    Especially important for spatio-temporal tilts (and if there is ganglion
-    offset).
+- Tried 5x5x5 transpose (no post-conv) and found the resulting decodings
+    were diffuse, may be that the 5x5 spatial part of the kernel was too
+    expansive especially at the first spatial upsampling stage.
 - try RMSProp with momentum soon, see whether more stable than ADAM
 - batch_sz=8 makes gradient much more stable. Even with lr=1e-1.
 """
@@ -214,7 +211,7 @@ class RetinaDecoder(nn.Module):
 
                     train_prog = ProgressBar(
                         print_every, size=test_set.__len__()*2 // batch_sz,
-                        label='training: '
+                        label='training:   '
                     )
                     train_prog.step() if j == 0 else 0  # hack, skipped batch
                 # start = timer.time()
@@ -396,7 +393,7 @@ def decoder_setup_1():
 def decoder_setup_2():
     """
     This setup was the first big success, solid base config to work from.
-    2x 20 epochs of this setup has strong results as well.
+    Note the lack of causal pooling, I hadn't built that module yet.
     """
     decoder = RetinaDecoder(
         # pre-pooling
@@ -521,6 +518,12 @@ def decoder_setup_4():
 
 
 def decoder_setup_5():
+    """
+    This is the same as setup_2, which was the first breakthrough network,
+    except here the pooling operations have been set to causal mode.
+    On colab, 2x 20 epochs with lr=1e-1 and batch_sz=8 has produced strong
+    strong decoding results.
+    """
     decoder = RetinaDecoder(
         # pre-pooling
         {'op': 'avg', 'kernel': (1, 2, 2), 'causal': True},
