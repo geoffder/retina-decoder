@@ -454,7 +454,8 @@ def crop(matrix, sz):
 
 if __name__ == '__main__':
     # datapath = 'D:/retina-sim-data/second/'
-    datapath = 'D:/retina-sim-data/third/'
+    # datapath = 'D:/retina-sim-data/third/'
+    datapath = '/media/geoff/Data/retina-sim-data/third/'
 
     # package_experiment(
     #     datapath, 'testExperiment', downsample=10, space_redux=4
@@ -466,7 +467,7 @@ if __name__ == '__main__':
     # )
 
     datapath += 'test_video_dataset/'
-    decoding_path = 'outputs/test_postconv_epoch20'
+    decoding_path = 'outputs/transpose5_batch8_lr1_epoch20/'
     stims = [
         'small_dark_circle0', 'small_dark_circle225', 'small_light_circle90',
         'small_light_circle135', 'small_light_collision0',
@@ -474,7 +475,7 @@ if __name__ == '__main__':
         'small_dark_collision135'
     ]
     for stim in stims:
-        example_gifs(datapath, 'net16', stim, decoding_path)
+        example_gifs(datapath, 'net17', stim, decoding_path)
 
     # datapath += 'video_dataset/'
     # stims = [
