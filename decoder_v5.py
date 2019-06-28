@@ -26,11 +26,25 @@ Thoughts:
     decreased, since decaying alpha will decrease loss on it's own?
     out = mean(loss) * start_alpha/current_alpha
     There is probably a better equation, but this gets at the idea...
+
 - Tried 5x5x5 transpose (no post-conv) and found the resulting decodings
     were diffuse, may be that the 5x5 spatial part of the kernel was too
     expansive especially at the first spatial upsampling stage.
+
 - try RMSProp with momentum soon, see whether more stable than ADAM
-- batch_sz=8 makes gradient much more stable. Even with lr=1e-1.
+
+- batch_sz=8 *seems* to make gradient more stable in training, however,
+    even with lr=1e-1 to speed things up, the decodings produced after 20
+    epochs seem spread out, blown-up, or deformed somehow. Is it possible that
+    the larger batchsize averages together the errors of the different stimuli
+    too much, such that weights of each channel can't get dialed in as well?
+
+    TODO: More comparisons of different batch sizes should be done. 4 was the
+    old standard before Colab allowed larger sizes. What is the sweet spot?
+    Try 1 -> 6 and get a feel for this dynamic.
+
+- before writing off batch_sz=8, try proper 30-40 epoch run, rather than
+    running 20 epoch twice (which screws with ADAM and loss alpha)
 """
 
 
@@ -400,7 +414,6 @@ def decoder_setup_1():
                 'stride': (1, 2, 2),
             }
         ],
-
     )
     return decoder
 
@@ -447,7 +460,6 @@ def decoder_setup_2():
             {'type': 'conv', 'in': 16, 'out': 8, 'kernel': (1, 3, 3)},
             {'type': 'conv', 'in': 8, 'out': 1, 'kernel': (1, 3, 3)},
         ],
-
     )
     return decoder
 
@@ -498,7 +510,6 @@ def decoder_setup_3():
             {'type': 'conv', 'in': 16, 'out': 8, 'kernel': (1, 3, 3)},
             {'type': 'conv', 'in': 8, 'out': 1, 'kernel': (1, 3, 3)},
         ],
-
     )
     return decoder
 
@@ -542,7 +553,7 @@ def main():
 
     print('Fitting model...')
     decoder.fit(
-        train_set, test_set, lr=1e-2, epochs=1, batch_sz=4, print_every=0,
+        train_set, test_set, lr=1e-2, epochs=20, batch_sz=4, print_every=0,
         loss_alpha=10, loss_decay=.9, peons=2
     )
 
