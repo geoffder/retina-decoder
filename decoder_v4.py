@@ -33,6 +33,7 @@ Thoughts:
     Especially important for spatio-temporal tilts (and if there is ganglion
     offset).
 - try RMSProp with momentum soon, see whether more stable than ADAM
+- batch_sz=8 makes gradient much more stable. Even with lr=1e-1.
 """
 
 
@@ -346,7 +347,12 @@ class RetinaDecoder(nn.Module):
 
 
 def decoder_setup_1():
-    "Playing with spatial convs after transpose convolutions."
+    """
+    Playing with spatial convs after transpose convolutions. Recent testing
+    suggests this is the best setup so far. Revisit idea of interleaving
+    spatial convolutions between transpose layers to achieve more cleanly
+    defined shapes.
+    """
     decoder = RetinaDecoder(
         # pre-pooling
         {'op': 'avg', 'kernel': (1, 2, 2), 'causal': True},
@@ -388,7 +394,10 @@ def decoder_setup_1():
 
 
 def decoder_setup_2():
-    "This setup was the first big success, solid base config to work from."
+    """
+    This setup was the first big success, solid base config to work from.
+    2x 20 epochs of this setup has strong results as well.
+    """
     decoder = RetinaDecoder(
         # pre-pooling
         {'op': 'avg', 'kernel': (1, 2, 2), 'causal': False},
