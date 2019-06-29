@@ -375,6 +375,13 @@ def decoder_setup_1():
     network, except here the pooling operations have been set to causal mode.
     On colab, 2x 20 epochs with lr=1e-1 and batch_sz=8 has produced strong
     strong decoding results.
+
+    Best run ever:
+    lr=1e-2, batch_sz=6, loss_alpha=10, loss_decay=.9 (ran 30 epochs)
+    Consider running with even more epochs, was consistently decreasing the
+    whole time, only bounced up on the last two epochs.
+    epoch 27 -> .007085; 28 -> .006431; 29 -> .007603
+    file: nopost_batch6_lre-2_epoch30.modl and corresponding outputs folder
     """
     decoder = RetinaDecoder(
         # pre-pooling
