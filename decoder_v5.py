@@ -325,7 +325,7 @@ class RetinaDecoder(nn.Module):
             if again == 'n':
                 break
 
-    def save_decodings(self, sample_set):
+    def save_decodings(self, sample_set, name=None):
         self.eval()  # set the model to testing mode
         sample_loader = DataLoader(sample_set, batch_size=1, num_workers=2)
 
@@ -335,7 +335,8 @@ class RetinaDecoder(nn.Module):
             os.mkdir(outfold)
         # prompt for name of and create this particular runs output folder
         while True:
-            nametag = input("Decoding set name: ")
+            nametag = input("Decoding set name: ") if name is None else name
+            name = None  # if parameter name fails, get input next loop
             basefold = os.path.join(outfold, nametag)
             if not os.path.isdir(basefold):
                 os.mkdir(basefold)
