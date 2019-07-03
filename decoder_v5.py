@@ -523,29 +523,33 @@ def decoder_setup_3():
 
 
 def main():
-    # train_path = 'D:/retina-sim-data/third/train_video_dataset/'
-    # test_path = 'D:/retina-sim-data/third/test_video_dataset/'
-    basepath = '/media/geoff/Data/retina-sim-data/third/'
+    if os.name == 'posix':
+        basepath = '/media/geoff/Data/retina-sim-data/third/'
+    else:
+        basepath = 'D:/retina-sim-data/third/'
+
     train_path = basepath + 'train_video_dataset/'
     test_path = basepath + 'test_video_dataset/'
 
     print('Building datasets...')
-    # train_set = RetinaVideos(
-    #     train_path, preload=False, crop_centre=[100, 100], time_first=False,
-    #     frame_lag=0
-    # )
-    # test_set = RetinaVideos(
-    #     test_path, preload=False, crop_centre=[100, 100], time_first=False,
-    #     frame_lag=0
-    # )
     train_set = RetinaVideos(
-        basepath, 'train_video_dataset.h5', preload=False,
-        crop_centre=[100, 100], time_first=False, frame_lag=0
+        train_path, preload=False, crop_centre=[100, 100], time_first=False,
+        frame_lag=0
     )
     test_set = RetinaVideos(
-        basepath, 'test_video_dataset.h5', preload=False,
-        crop_centre=[100, 100], time_first=False, frame_lag=0
+        test_path, preload=False, crop_centre=[100, 100], time_first=False,
+        frame_lag=0
     )
+
+    # testing hdf5 dataset structure
+    # train_set = RetinaVideos(
+    #     basepath, 'train_video_dataset.h5', preload=False,
+    #     crop_centre=[100, 100], time_first=False, frame_lag=0
+    # )
+    # test_set = RetinaVideos(
+    #     basepath, 'test_video_dataset.h5', preload=False,
+    #     crop_centre=[100, 100], time_first=False, frame_lag=0
+    # )
 
     print('Building model...')
     decoder = decoder_setup_2()
