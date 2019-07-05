@@ -122,7 +122,9 @@ def build_stim_movie(folder, dims, downsample, space_redux):
         # try to figure out why and maybe swtich back. Important for stim
         # and cell recordings to match.
         down_rec = rec[idx]  # simple slice downsampling
-        for t in range(duration):
+        # TODO: use network dt parameter instead of this manual hack
+        tOn, tOff = param['tOn']//(downsample*5), param['tOff']//(downsample*5)
+        for t in range(int(tOn), int(tOff)):
             xpos, ypos, amp, orient = down_rec[t, :]
             xpos, ypos = (xpos / space_redux, ypos / space_redux)
             if param['type'] == 'bar':
@@ -453,31 +455,30 @@ def crop(matrix, sz):
 
 
 if __name__ == '__main__':
-    # datapath = 'D:/retina-sim-data/second/'
-    # datapath = 'D:/retina-sim-data/third/'
-    datapath = '/media/geoff/Data/retina-sim-data/third/'
+    if os.name == 'posix':
+        basepath = '/media/geoff/Data/retina-sim-data/'
+    else:
+        basepath = 'D:/retina-sim-data/'
 
-    # package_experiment(
-    #     datapath, 'testExperiment', downsample=10, space_redux=4
-    # )
-    # test_gifs('med_light_bar')
+    # datapath = basepath + 'third/'
+    datapath = basepath + 'turn_test/'
 
-    # build_folder_dataset(
-    #     datapath, 'video_dataset/', downsample=10, space_redux=2
-    # )
+    build_folder_dataset(
+        datapath, 'video_dataset/', downsample=10, space_redux=2
+    )
 
-    datapath += 'test_video_dataset/'
-    decoding_path = 'outputs/nopost_batch6_lre-2_epoch30/'
-    stims = [
-        'small_dark_circle0', 'small_dark_circle225', 'small_light_circle90',
-        'small_light_circle135', 'small_light_collision0',
-        'small_light_collision45', 'small_dark_collision90',
-        'small_dark_collision135'
-    ]
-    for stim in stims:
-        example_gifs(datapath, 'net16', stim, decoding_path)
+    # datapath += 'test_video_dataset/'
+    # decoding_path = 'outputs/nopost_batch6_lre-2_epoch30/'
+    # stims = [
+    #     'small_dark_circle0', 'small_dark_circle225', 'small_light_circle90',
+    #     'small_light_circle135', 'small_light_collision0',
+    #     'small_light_collision45', 'small_dark_collision90',
+    #     'small_dark_collision135'
+    # ]
+    # for stim in stims:
+    #     example_gifs(datapath, 'net16', stim, decoding_path)
 
-    # datapath += 'video_dataset/'
+    datapath += 'video_dataset/'
     # stims = [
     #     'small_light_circle0', 'small_dark_circle225',
     #     'med_light_bar0', 'med_light_bar45', 'med_light_bar90',
@@ -490,5 +491,11 @@ if __name__ == '__main__':
     #     'small_light_collision0', 'small_light_collision45',
     #     'small_light_collision90', 'small_light_collision135'
     # ]
-    # for stim in stims:
-    #     example_gifs_no_decoding(datapath, 'net0', stim)
+
+    stims = [
+        'small_light_circle0_turn90', 'small_light_circle0_turn-90',
+        # 'small_dark_circle90_turn90', 'small_dark_circle90_turn-90'
+    ]
+    # stims = ['small_light_circle90']
+    for stim in stims:
+        example_gifs_no_decoding(datapath, 'net0', stim)
