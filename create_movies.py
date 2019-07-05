@@ -17,6 +17,7 @@ class ProgressBar(object):
         self.size = size if steps > size else steps
         self.label = label
         self.tick = np.floor(steps/self.size)
+        self.xtra_ticks = int(steps - self.tick*self.size)
         self.prog = 0
         self.update()
 
@@ -29,7 +30,8 @@ class ProgressBar(object):
     def update(self):
         ticks = int(np.floor(self.prog/self.tick))
         print(
-            '\r' + self.label + '[' + '='*ticks + ' '*(self.size-ticks) + ']',
+            '\r' + self.label
+            + '[' + '='*ticks + ' '*(self.size+self.xtra_ticks-ticks) + ']',
             end='', flush=False
         )
 
@@ -461,7 +463,7 @@ if __name__ == '__main__':
         basepath = 'D:/retina-sim-data/'
 
     # datapath = basepath + 'third/'
-    datapath = basepath + 'turn_test/'
+    datapath = basepath + 'fourth/'
 
     build_folder_dataset(
         datapath, 'video_dataset/', downsample=10, space_redux=2
@@ -476,9 +478,10 @@ if __name__ == '__main__':
     #     'small_dark_collision135'
     # ]
     # for stim in stims:
-    #     example_gifs(datapath, 'net16', stim, decoding_path)
+    #     example_gifs(datapath, 'net16', stim, decodin_path)
 
     datapath += 'video_dataset/'
+
     # stims = [
     #     'small_light_circle0', 'small_dark_circle225',
     #     'med_light_bar0', 'med_light_bar45', 'med_light_bar90',
@@ -487,15 +490,14 @@ if __name__ == '__main__':
     #     'thin_dark_bar0', 'thin_dark_bar45', 'thin_dark_bar90',
     #     'thin_dark_bar135', 'thin_dark_bar180',
     # ]
+
     # stims = [
     #     'small_light_collision0', 'small_light_collision45',
-    #     'small_light_collision90', 'small_light_collision135'
+    #     'small_light_collision90', 'small_light_collision135',
+    #     'small_light_circle0_turn90', 'small_light_circle0_turn-90',
+    #     'small_dark_circle90_turn90', 'small_dark_circle90_turn-90'
     # ]
 
-    stims = [
-        'small_light_circle0_turn90', 'small_light_circle0_turn-90',
-        # 'small_dark_circle90_turn90', 'small_dark_circle90_turn-90'
-    ]
     # stims = ['small_light_circle90']
-    for stim in stims:
-        example_gifs_no_decoding(datapath, 'net0', stim)
+    # for stim in stims:
+    #     example_gifs_no_decoding(datapath, 'net0', stim)
