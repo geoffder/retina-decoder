@@ -353,13 +353,17 @@ def build_folder_dataset(basepath, folder, downsample=1, space_redux=1):
         coords = np.loadtxt(basepath+net+'/cellCoords.csv', delimiter=',')
         # net parameters
         netpars = json.loads(open(basepath+net+'/netParams.txt').read())
+        net_dims = [
+            netpars['xdim']//netpars.get('space_redux', 1),
+            netpars['ydim']//netpars.get('space_redux', 1)
+        ]
         # cell parameters
         params = [json.loads(line)
                   for line in open(basepath+net+'/cellParams.txt').readlines()]
         diams = [cell['diam'] for cell in params]
         # soma masks of each cell, shape:(NxHxW)
         soma_masks = get_masks(
-            [netpars['xdim'], netpars['ydim']], coords, diams, space_redux
+            net_dims, coords, diams, space_redux
         )
         # make folder and store masks of all cells
         os.mkdir(datafolder+net+'/masks/')
@@ -372,8 +376,7 @@ def build_folder_dataset(basepath, folder, downsample=1, space_redux=1):
         for stim in stim_names:
             pth = basepath + '/' + net + '/' + stim + '/'
             _, cell_movie = build_cell_movie(
-                pth, [netpars['xdim'], netpars['ydim']], coords, diams,
-                downsample, space_redux
+                pth, net_dims, coords, diams, downsample, space_redux
             )
             np.save(datafolder+net+'/cells/'+stim, cell_movie)
             progress.step()
@@ -384,7 +387,7 @@ def build_folder_dataset(basepath, folder, downsample=1, space_redux=1):
     for stim in stim_names:
         pth = basepath + '/' + net_names[0] + '/' + stim + '/'
         _, stim_movie = build_stim_movie(
-            pth, [netpars['xdim'], netpars['ydim']], downsample, space_redux
+            pth, net_dims, downsample, space_redux
         )
         np.save(datafolder+'/stims/'+stim, stim_movie)
         progress.step()
@@ -463,10 +466,10 @@ if __name__ == '__main__':
         basepath = 'D:/retina-sim-data/'
 
     # datapath = basepath + 'third/'
-    datapath = basepath + 'fourth/'
+    datapath = basepath + 'redux_test/'
 
     build_folder_dataset(
-        datapath, 'video_dataset/', downsample=10, space_redux=2
+        datapath, 'video_dataset/', downsample=10, space_redux=1
     )
 
     # datapath += 'test_video_dataset/'

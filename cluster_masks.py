@@ -70,10 +70,15 @@ def create_cluster_masks(basepath, videopath, ignore):
 
 
 def main():
-    basepath = 'D:/retina-sim-data/third/'
-    datapath = 'D:/retina-sim-data/third/train_video_dataset/'
+    if os.name == 'posix':
+        basepath = '/media/geoff/Data/retina-sim-data/'
+    else:
+        basepath = 'D:/retina-sim-data/'
 
-    # only want full field stimuli
+    basepath += 'fourth/'
+    datapath = basepath + 'video_dataset/'
+
+    # only want full field stimuli (long bars)
     ignore = ['circle', 'collision']
 
     # cluster cells, combine ROI masks, and save
