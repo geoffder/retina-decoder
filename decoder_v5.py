@@ -390,7 +390,7 @@ def decoder_setup_1():
         # grouped temporal conv stacks:
         [
             {
-                'in': 15, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
+                'in': 14, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
                 'stride': 1, 'groups': 15, 'acivation': nn.ReLU,
                 'pool': {'op': 'avg', 'kernel': (2, 2, 2), 'causal': True}
             }
