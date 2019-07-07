@@ -33,6 +33,8 @@ Thoughts:
 
 - try RMSProp with momentum soon, see whether more stable than ADAM
 
+- try using channel grouping deeper in the the network
+
 - batch_sz=8 *seems* to make gradient more stable in training, however,
     even with lr=1e-1 to speed things up, the decodings produced after 20
     epochs seem spread out, blown-up, or deformed somehow. Is it possible that
@@ -391,7 +393,7 @@ def decoder_setup_1():
         [
             {
                 'in': 14, 'out': [45, 45, 15], 'kernel': (2, 1, 1),
-                'stride': 1, 'groups': 15, 'acivation': nn.ReLU,
+                'stride': 1, 'groups': 14, 'acivation': nn.ReLU,
                 'pool': {'op': 'avg', 'kernel': (2, 2, 2), 'causal': True}
             }
         ],
