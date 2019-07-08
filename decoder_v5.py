@@ -15,7 +15,7 @@ from torch import nn
 from torch import optim
 
 from custom_loss import DecoderLoss
-from retina_dataset_h5 import RetinaVideos
+from retina_dataset import RetinaVideos
 from torch.utils.data import DataLoader
 
 # import time as timer
@@ -33,7 +33,8 @@ Thoughts:
 
 - try RMSProp with momentum soon, see whether more stable than ADAM
 
-- try using channel grouping deeper in the the network
+- try using channel grouping deeper in the the network, maybe it does not need
+    to mix information across them until the transpose/decoding phase
 
 - batch_sz=8 *seems* to make gradient more stable in training, however,
     even with lr=1e-1 to speed things up, the decodings produced after 20
@@ -203,7 +204,7 @@ class RetinaDecoder(nn.Module):
         self.loss = DecoderLoss(alpha=loss_alpha, decay=loss_decay).to(self.dv)
         self.optimizer = optim.Adam(self.parameters(), lr=lr, eps=1e-8)
 
-        n_batches = N // batch_sz
+        n_batches = np.ceil(N / batch_sz).astype('int')
         print_every = n_batches if print_every < 1 else print_every
         train_prog = None
         train_costs, test_costs = [], []
@@ -221,8 +222,10 @@ class RetinaDecoder(nn.Module):
                 train_prog.step() if train_prog is not None else 0
                 if j % print_every == 0:
                     test_prog = ProgressBar(
-                        test_set.__len__() // batch_sz,
-                        size=test_set.__len__() // batch_sz,
+                        np.ceil(test_set.__len__() / batch_sz).astype('int'),
+                        size=np.ceil(
+                            test_set.__len__() / batch_sz
+                        ).astype('int'),
                         label='validating: '
                     )
                     # costs and accuracies for test set
