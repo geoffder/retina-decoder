@@ -37,7 +37,9 @@ class ProgressBar(object):
 
     def check(self):
         if self.prog == self.steps:
-            print('')  # new-line
+            # print('')  # new-line
+            # test this, guarantee full bar. Ends with new-line.
+            print('\r'+self.label+'['+'='*(self.size+self.xtra_ticks)+']')
 
 
 def single_cell_movie(basepath, netdir, recdir, dims):
@@ -466,22 +468,24 @@ if __name__ == '__main__':
         basepath = 'D:/retina-sim-data/'
 
     # datapath = basepath + 'third/'
-    datapath = basepath + 'redux_test/'
+    datapath = basepath + 'fourth/'
 
-    build_folder_dataset(
-        datapath, 'video_dataset/', downsample=10, space_redux=1
-    )
+    # build_folder_dataset(
+    #     datapath, 'video_dataset/', downsample=10, space_redux=1
+    # )
 
-    # datapath += 'test_video_dataset/'
-    # decoding_path = 'outputs/nopost_batch6_lre-2_epoch30/'
-    # stims = [
-    #     'small_dark_circle0', 'small_dark_circle225', 'small_light_circle90',
-    #     'small_light_circle135', 'small_light_collision0',
-    #     'small_light_collision45', 'small_dark_collision90',
-    #     'small_dark_collision135'
-    # ]
-    # for stim in stims:
-    #     example_gifs(datapath, 'net16', stim, decodin_path)
+    datapath += 'test_video_dataset/'
+    decoding_path = 'outputs/nopost_batch6_lre-2_epoch35/'
+    stims = [
+        'small_dark_circle0', 'small_dark_circle225', 'small_light_circle90',
+        'small_light_circle135', 'small_light_collision0',
+        'small_light_collision45', 'small_dark_collision90',
+        'small_dark_collision135',
+        'small_light_circle0_turn90', 'small_light_circle0_turn-90',
+        'small_dark_circle90_turn90', 'small_dark_circle90_turn-90'
+    ]
+    for stim in stims:
+        example_gifs(datapath, 'net16', stim, decoding_path)
 
     datapath += 'video_dataset/'
 
@@ -502,5 +506,6 @@ if __name__ == '__main__':
     # ]
 
     # stims = ['small_light_circle90']
+
     # for stim in stims:
     #     example_gifs_no_decoding(datapath, 'net0', stim)
