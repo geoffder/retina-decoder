@@ -36,18 +36,9 @@ Thoughts:
 - try using channel grouping deeper in the the network, maybe it does not need
     to mix information across them until the transpose/decoding phase
 
-- batch_sz=8 *seems* to make gradient more stable in training, however,
-    even with lr=1e-1 to speed things up, the decodings produced after 20
-    epochs seem spread out, blown-up, or deformed somehow. Is it possible that
-    the larger batchsize averages together the errors of the different stimuli
-    too much, such that weights of each channel can't get dialed in as well?
-
-    TODO: More comparisons of different batch sizes should be done. 4 was the
-    old standard before Colab allowed larger sizes. What is the sweet spot?
-    Try 1 -> 6 and get a feel for this dynamic.
-
-- before writing off batch_sz=8, try proper 30-40 epoch run, rather than
-    running 20 epoch twice (which screws with ADAM and loss alpha)
+- batch_sz=6 seems to be the optimal batch_sz. It strikes a strong balance of
+    stable gradient without averaging too much, allowing strong advances to be
+    made on the gradiets at each optimization step.
 """
 
 
