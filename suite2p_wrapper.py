@@ -17,28 +17,38 @@ def get_suite2p_data(pth):
     """
     # get indices of all accepted cell ROIs
     cellids = np.nonzero(
-        np.load(pth + 'iscell.npy')[:, 0].astype(np.int)
+        np.load(os.path.join(pth, 'iscell.npy'))[:, 0].astype(np.int)
     )[0]
 
     # get extracted fluourence signals for accepted cells only. shape:(N, T)
-    recs = np.load(pth + 'F.npy')[cellids, :]
-    neu = np.load(pth + 'Fneu.npy')[cellids, :]
+    recs = np.load(os.path.join(pth, 'F.npy'))[cellids, :]
+    neu = np.load(os.path.join(pth, 'Fneu.npy'))[cellids, :]
 
     # get stat dict containing ROI masks (etc) for accepted cells
-    stats = np.load(pth + 'stat.npy', allow_pickle=True)[cellids]
+    stats = np.load(os.path.join(pth, 'stat.npy'), allow_pickle=True)[cellids]
 
     return recs, neu, stats
 
 
-def get_raw_scans(datapath, start_scan, num_scans):
+def get_raw_scans(datapath, prefix='Scan', start_scan=False, num_scans=False):
     """
     Load in original 2PLSM scans, stack them and return as (T, Y, X) array.
+    If start_scan and num_scans are not specified, all scans in the folder are
+    loaded.
     """
-    mov = np.concatenate([
-        io.imread("%sScan_%03d_ch1.tif" % (datapath, num))
-        for num in range(start_scan, start_scan+num_scans)
-    ], axis=0)
-    return mov
+    if not (start_scan and num_scans):
+        fnames = [
+            os.path.join(datapath, f)
+            for f in os.listdir(datapath)
+            if os.path.isfile(os.path.join(datapath, f)) and '_ch' in f
+        ]
+    else:
+        fnames = [
+            "%s%s_%03d_ch1.tif" % (datapath, prefix, num)
+            for num in range(start_scan, start_scan+num_scans)
+        ]
+
+    return np.concatenate([io.imread(fname) for fname in fnames], axis=0)
 
 
 def get_beams(movie, stats):
@@ -54,7 +64,10 @@ def get_beams(movie, stats):
 
 
 def create_masks(stats, dims):
-
+    """
+    Use ypix and xpix index arrays to generate binary (0 || 1) spatial masks
+    for each cell, and return as a 3d int8 ndarray of shape (N, Y, X).
+    """
     masks = np.zeros((stats.size, *dims), dtype=np.int8)
     for idx in range(stats.size):
         masks[idx, stats[idx]['ypix'], stats[idx]['xpix']] = 1
@@ -63,14 +76,15 @@ def create_masks(stats, dims):
 
 def pack_hdf(pth, fname, Fcell, Fneu, raw_beams, roi_masks):
     """
-    Store recordings and masks in and HDF5 archive. If Igor can't read these,
-    then use pandas to_hdf() function, that should work.
+    Store recordings and masks in an HDF5 archive using h5py. Extracted
+    recordings and transposed to shape:(Time, Cell), and mask stack dimensions
+    are permuted to shape:(X, Y, Cell) to align with IgorPro formatting.
     """
-    with h5.File(pth + fname + '.hdf5', 'w') as pckg:
-        pckg.create_dataset("Fcell", data=Fcell)
-        pckg.create_dataset("Fneu", data=Fneu)
-        pckg.create_dataset("masks", data=roi_masks)
-        pckg.create_dataset("beams", data=raw_beams)
+    with h5.File(pth + fname + '.h5', 'w') as pckg:
+        pckg.create_dataset("Fcell", data=Fcell.T)
+        pckg.create_dataset("Fneu", data=Fneu.T)
+        pckg.create_dataset("masks", data=roi_masks.transpose(2, 1, 0))
+        pckg.create_dataset("beams", data=raw_beams.T)
 
 
 def store_csvs(pth, fldr, Fcell, Fneu, raw_beams, roi_masks):
@@ -120,14 +134,15 @@ if __name__ == '__main__':
     print("Recordings for %d cells loaded." % recs.shape[0])
 
     # Load in 2PLSM scans (.tif) and stack them.
-    mov = get_raw_scans(datapath, 9, 8)
+    mov = get_raw_scans(datapath, 'Scan')
+
     # Extract mean Z-projections of each cell from raw movie using their ROIs.
     beams = get_beams(mov, stats)
 
     # Create binary spatial masks for each cell using ypix and xpix indices.
     masks = create_masks(stats, mov.shape[1:])
 
-    # Save data as CSVs into sub-folder
-    # store_csvs(datapath, 'csv_data', recs, neu, beams, masks)
+    # Save suite2p outputs, and raw signal (extracted with rois) to HDF5 file
+    pack_hdf(datapath, 'suite2pack', recs, neu, beams, masks)
 
     plot_signals(recs, recs-neu*.8, beams, 10)
